@@ -211,4 +211,4 @@ function updateCapturedUI() {
 function updateScores() {
     document.getElementById('p1-score').textContent = state.scores.p1;
     document.getElementById('p2-score').textContent = state.scores.p2;
-}
+} 
