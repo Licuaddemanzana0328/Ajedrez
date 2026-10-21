@@ -1,10 +1,21 @@
 let peer = null;
 let conn = null;
-let isHost = false;
+
+// Genera un código aleatorio fácil de compartir (ej: 6VKJ4)
+function generateShortCode(length = 5) {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // Se excluyen caracteres confusos como O, 0, I, 1
+    let result = '';
+    for (let i = 0; i < length; i++) {
+        result += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return result;
+}
 
 function initNetwork() {
-    // Agregamos servidores STUN gratuitos de Google para atravesar routers/NAT
-    peer = new Peer({
+    const customId = generateShortCode(5);
+
+    // Configuración con ID corto de 5 caracteres + Servidores STUN para internet
+    peer = new Peer(customId, {
         config: {
             iceServers: [
                 { urls: 'stun:stun.l.google.com:19302' },
@@ -23,16 +34,20 @@ function initNetwork() {
         setupConnection();
     });
 
-    // Manejo de errores de red (por ejemplo, si el firewall bloquea)
     peer.on('error', (err) => {
         console.error("Error en PeerJS:", err.type);
-        updateStatus("⚠️ Error de conexión. Revisa que el ID sea correcto.");
+        if (err.type === 'unavailable-id') {
+            // Si por casualidad el código de 5 dígitos ya está ocupado, genera otro automáticamente
+            initNetwork();
+        } else {
+            updateStatus("⚠️ Error de conexión. Revisa que el código sea correcto.");
+        }
     });
 
     document.getElementById('connect-btn').addEventListener('click', () => {
-        const remoteId = document.getElementById('remote-peer-id').value.trim();
+        const remoteId = document.getElementById('remote-peer-id').value.trim().toUpperCase();
         if (remoteId) {
-            updateStatus("Conectando con el rival...");
+            updateStatus(`Conectando con la sala ${remoteId}...`);
             conn = peer.connect(remoteId);
             setupConnection();
         }
@@ -41,45 +56,32 @@ function initNetwork() {
 
 function setupConnection() {
     conn.on('open', () => {
-        updateStatus(isHost ? 'Rival conectado. Juegas con las blancas.' : 'Conectado. Juegas con las negras.');
+        updateStatus("¡Conectado con el rival online!");
         conn.send({ type: 'handshake', name: state.playerName });
     });
 
     conn.on('data', (data) => {
-        if (!data || typeof data !== 'object') return;
         if (data.type === 'handshake') {
-            state.onlineRivalName = String(data.name || 'Rival Online').slice(0, 20);
-            refreshLabels();
-            updateCapturedUI();
-            updateHistoryUI();
-            if (isHost) startGame();
-        } else if (data.type === 'restart') {
-            startGame({ timer: parseInt(data.timer) || 0, remote: true });
+            state.onlineRivalName = data.name;
+            document.getElementById('p2-label').textContent = data.name;
         } else if (data.type === 'move') {
-            receiveRemoteMove(data);
+            if (state.game === 'chess') {
+                executeChessMove(data.from, data.to, data.promo);
+                switchTurn('white');
+                renderChessBoard();
+            } else if (state.game === 'checkers') {
+                data.to.piece = data.from.piece;
+                data.from.piece = null;
+                switchTurn('white');
+                renderCheckersBoard();
+            }
+            addHistoryMove(playerLabel(state.turn), 'Movimiento Remoto');
         }
     });
-
-    conn.on('close', () => {
-        updateStatus(`${state.onlineRivalName || 'El rival'} se desconectó`);
-    });
-}
-
-function receiveRemoteMove(d) {
-    if (state.mode !== 'online' || state.over || state.turn === state.myColor) return;
-    const ok = [d.from && d.from.r, d.from && d.from.c, d.to && d.to.r, d.to && d.to.c].every(v => Number.isInteger(v) && v >= 0 && v < 8);
-    if (!ok) return;
-    const piece = state.boardState[d.from.r][d.from.c];
-    if (!piece || (piece === piece.toUpperCase()) !== (state.turn === 'white')) return;
-    if (!getBasicChessMoves(d.from.r, d.from.c, state.boardState).some(m => m.r === d.to.r && m.c === d.to.c)) return;
-    applyChessMove(d.from, d.to, 'Q');
 }
 
 function sendNetMove(payload) {
-    if (conn && conn.open) conn.send({ type: 'move', from: payload.from, to: payload.to });
+    if (conn && conn.open) {
+        conn.send({ type: 'move', ...payload });
+    }
 }
-
-function sendNetRestart() {
-    if (conn && conn.open) conn.send({ type: 'restart', timer: state.timerSeconds });
-}
- 
