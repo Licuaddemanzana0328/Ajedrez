@@ -30,3 +30,4 @@ function launchConfetti() {
         if (alive && t < end) requestAnimationFrame(frame); else cv.remove();
     })(performance.now());
 }
+ 
