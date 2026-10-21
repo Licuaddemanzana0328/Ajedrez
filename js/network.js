@@ -1,87 +1,78 @@
 let peer = null;
 let conn = null;
-
-// Genera un código aleatorio fácil de compartir (ej: 6VKJ4)
-function generateShortCode(length = 5) {
-    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // Se excluyen caracteres confusos como O, 0, I, 1
-    let result = '';
-    for (let i = 0; i < length; i++) {
-        result += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
-    return result;
-}
+let isHost = false;
 
 function initNetwork() {
-    const customId = generateShortCode(5);
-
-    // Configuración con ID corto de 5 caracteres + Servidores STUN para internet
-    peer = new Peer(customId, {
-        config: {
-            iceServers: [
-                { urls: 'stun:stun.l.google.com:19302' },
-                { urls: 'stun:stun1.l.google.com:19302' },
-                { urls: 'stun:stun2.l.google.com:19302' }
-            ]
-        }
-    });
+    if (typeof Peer === 'undefined') {
+        updateStatus('No se pudo cargar la conexión online. Revisa tu internet y recarga la página.');
+        return;
+    }
+    peer = new Peer();
 
     peer.on('open', (id) => {
         document.getElementById('my-peer-id').value = id;
     });
 
     peer.on('connection', (c) => {
+        if (conn && conn.open) { c.close(); return; }
         conn = c;
+        isHost = true;
+        state.myColor = 'white';
         setupConnection();
     });
 
-    peer.on('error', (err) => {
-        console.error("Error en PeerJS:", err.type);
-        if (err.type === 'unavailable-id') {
-            // Si por casualidad el código de 5 dígitos ya está ocupado, genera otro automáticamente
-            initNetwork();
-        } else {
-            updateStatus("⚠️ Error de conexión. Revisa que el código sea correcto.");
-        }
-    });
+    peer.on('error', (err) => updateStatus('Error de conexión: ' + err.type));
 
     document.getElementById('connect-btn').addEventListener('click', () => {
-        const remoteId = document.getElementById('remote-peer-id').value.trim().toUpperCase();
-        if (remoteId) {
-            updateStatus(`Conectando con la sala ${remoteId}...`);
-            conn = peer.connect(remoteId);
-            setupConnection();
-        }
+        const remoteId = document.getElementById('remote-peer-id').value.trim();
+        if (!remoteId) return;
+        conn = peer.connect(remoteId, { reliable: true });
+        isHost = false;
+        state.myColor = 'black';
+        setupConnection();
     });
 }
 
 function setupConnection() {
     conn.on('open', () => {
-        updateStatus("¡Conectado con el rival online!");
+        updateStatus(isHost ? 'Rival conectado. Juegas con las blancas.' : 'Conectado. Juegas con las negras.');
         conn.send({ type: 'handshake', name: state.playerName });
     });
 
     conn.on('data', (data) => {
+        if (!data || typeof data !== 'object') return;
         if (data.type === 'handshake') {
-            state.onlineRivalName = data.name;
-            document.getElementById('p2-label').textContent = data.name;
+            state.onlineRivalName = String(data.name || 'Rival Online').slice(0, 20);
+            refreshLabels();
+            updateCapturedUI();
+            updateHistoryUI();
+            if (isHost) startGame();
+        } else if (data.type === 'restart') {
+            startGame({ timer: parseInt(data.timer) || 0, remote: true });
         } else if (data.type === 'move') {
-            if (state.game === 'chess') {
-                executeChessMove(data.from, data.to, data.promo);
-                switchTurn('white');
-                renderChessBoard();
-            } else if (state.game === 'checkers') {
-                data.to.piece = data.from.piece;
-                data.from.piece = null;
-                switchTurn('white');
-                renderCheckersBoard();
-            }
-            addHistoryMove(playerLabel(state.turn), 'Movimiento Remoto');
+            receiveRemoteMove(data);
         }
+    });
+
+    conn.on('close', () => {
+        updateStatus(`${state.onlineRivalName || 'El rival'} se desconectó`);
     });
 }
 
+function receiveRemoteMove(d) {
+    if (state.mode !== 'online' || state.over || state.turn === state.myColor) return;
+    const ok = [d.from && d.from.r, d.from && d.from.c, d.to && d.to.r, d.to && d.to.c].every(v => Number.isInteger(v) && v >= 0 && v < 8);
+    if (!ok) return;
+    const piece = state.boardState[d.from.r][d.from.c];
+    if (!piece || (piece === piece.toUpperCase()) !== (state.turn === 'white')) return;
+    if (!getBasicChessMoves(d.from.r, d.from.c, state.boardState).some(m => m.r === d.to.r && m.c === d.to.c)) return;
+    applyChessMove(d.from, d.to, 'Q');
+}
+
 function sendNetMove(payload) {
-    if (conn && conn.open) {
-        conn.send({ type: 'move', ...payload });
-    }
+    if (conn && conn.open) conn.send({ type: 'move', from: payload.from, to: payload.to });
+}
+
+function sendNetRestart() {
+    if (conn && conn.open) conn.send({ type: 'restart', timer: state.timerSeconds });
 }
