@@ -3,33 +3,39 @@ let conn = null;
 let isHost = false;
 
 function initNetwork() {
-    if (typeof Peer === 'undefined') {
-        updateStatus('No se pudo cargar la conexión online. Revisa tu internet y recarga la página.');
-        return;
-    }
-    peer = new Peer();
+    // Agregamos servidores STUN gratuitos de Google para atravesar routers/NAT
+    peer = new Peer({
+        config: {
+            iceServers: [
+                { urls: 'stun:stun.l.google.com:19302' },
+                { urls: 'stun:stun1.l.google.com:19302' },
+                { urls: 'stun:stun2.l.google.com:19302' }
+            ]
+        }
+    });
 
     peer.on('open', (id) => {
         document.getElementById('my-peer-id').value = id;
     });
 
     peer.on('connection', (c) => {
-        if (conn && conn.open) { c.close(); return; }
         conn = c;
-        isHost = true;
-        state.myColor = 'white';
         setupConnection();
     });
 
-    peer.on('error', (err) => updateStatus('Error de conexión: ' + err.type));
+    // Manejo de errores de red (por ejemplo, si el firewall bloquea)
+    peer.on('error', (err) => {
+        console.error("Error en PeerJS:", err.type);
+        updateStatus("⚠️ Error de conexión. Revisa que el ID sea correcto.");
+    });
 
     document.getElementById('connect-btn').addEventListener('click', () => {
         const remoteId = document.getElementById('remote-peer-id').value.trim();
-        if (!remoteId) return;
-        conn = peer.connect(remoteId, { reliable: true });
-        isHost = false;
-        state.myColor = 'black';
-        setupConnection();
+        if (remoteId) {
+            updateStatus("Conectando con el rival...");
+            conn = peer.connect(remoteId);
+            setupConnection();
+        }
     });
 }
 
