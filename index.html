@@ -19,7 +19,7 @@
 <body>
     <header>
         <h1>Centro de Juegos: Ajedrez</h1>
-        <p>Juega contra el Autómata, con un amigo en el mismo equipo o en línea</p>
+        <p>Juega contra el Bot, con un amigo en el mismo equipo o en línea</p>
     </header>
 
     <div class="main-layout">
@@ -39,9 +39,9 @@
             <div class="form-group">
                 <label for="mode-select">Modo de juego</label>
                 <select id="mode-select">
-                    <option value="ai">Vs. Autómata</option>
+                    <option value="ai">Vs. Bot</option>
                     <option value="local">Vs. Humano (Local)</option>
-                    <option value="online">Online (otra computadora)</option>
+                    <option value="online">Online</option>
                 </select>
             </div>
             <div class="network-panel" id="network-panel" style="display: none;">
@@ -52,7 +52,7 @@
                 <button id="connect-btn" type="button">Conectar</button>
             </div>
             <div class="form-group" id="difficulty-group">
-                <label for="difficulty-select">Dificultad del Autómata</label>
+                <label for="difficulty-select">Dificultad del Bot</label>
                 <select id="difficulty-select">
                     <option value="learn">Aprendiz (al azar)</option>
                     <option value="easy">Fácil</option>
@@ -86,7 +86,7 @@
             <button id="start-btn" type="button">Iniciar / Reiniciar Juego</button>
             <div class="scoreboard">
                 <div class="score-box"><div id="p1-label">Jugador 1</div><div class="score-value" id="p1-score">0</div></div>
-                <div class="score-box"><div id="p2-label">Autómata</div><div class="score-value" id="p2-score">0</div></div>
+                <div class="score-box"><div id="p2-label">Bot</div><div class="score-value" id="p2-score">0</div></div>
             </div>
         </aside>
 
