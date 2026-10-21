@@ -76,3 +76,4 @@ function sendNetMove(payload) {
 function sendNetRestart() {
     if (conn && conn.open) conn.send({ type: 'restart', timer: state.timerSeconds });
 }
+ 
