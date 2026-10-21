@@ -91,3 +91,4 @@ function startGame(opts = {}) {
 
     if (state.mode === 'online' && !opts.remote) sendNetRestart();
 }
+ 
