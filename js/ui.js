@@ -37,7 +37,7 @@ function esc(t) {
 function playerLabel(turn) {
     if (state.mode === 'online') return turn === state.myColor ? state.playerName : (state.onlineRivalName || 'Rival Online');
     if (turn === 'white') return state.playerName;
-    return state.mode === 'ai' ? 'El Autómata' : state.player2Name;
+    return state.mode === 'ai' ? 'El Bot' : state.player2Name;
 }
 
 function isBoardFlipped() { return state.mode === 'online' && state.myColor === 'black'; }

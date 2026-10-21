@@ -213,7 +213,7 @@ function processChessClick(r, c) {
 
 const sqName = p => ['A','B','C','D','E','F','G','H'][p.c] + (8 - p.r);
 
-// Punto único por donde pasa toda jugada: local, Autómata o rival online
+// Punto único por donde pasa toda jugada: local, Bot o rival online
 function applyChessMove(from, to, promo = 'Q') {
     const mover = state.turn;
     const piece = state.boardState[from.r][from.c];
@@ -229,7 +229,7 @@ function applyChessMove(from, to, promo = 'Q') {
     if (checkChessWin()) return;
 
     if (state.mode === 'ai' && state.turn === 'black') {
-        updateStatus('El Autómata está pensando...');
+        updateStatus('El Bot está pensando...');
         setTimeout(makeAIMoveChess, 500);
     } else {
         updateStatus(`Turno de ${playerLabel(state.turn)}`);
@@ -326,7 +326,7 @@ function getBasicChessMoves(r, c, board) {
     return moves;
 }
 
-// Positivo = ventaja de las negras (el Autómata)
+// Positivo = ventaja de las negras (el Bot)
 function evaluateChessBoard(board) {
     let total = 0;
     for (let r = 0; r < 8; r++) {
