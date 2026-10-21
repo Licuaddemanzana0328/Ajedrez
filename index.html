@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Centro de Juegos: Ajedrez</title>
+    <link rel="stylesheet" href="css/styles.css">
+    <script>
+        // Si algo falla, el motivo exacto aparece abajo en pantalla
+        window.addEventListener('error', function (e) {
+            if (!e.message) return;
+            var b = document.getElementById('error-banner');
+            if (!b) { b = document.createElement('div'); b.id = 'error-banner'; document.body.appendChild(b); }
+            b.textContent = 'Error: ' + e.message + ' (' + String(e.filename || '').split('/').pop() + ':' + e.lineno + ')';
+        });
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
+</head>
+<body>
+    <header>
+        <h1>Centro de Juegos: Ajedrez</h1>
+        <p>Juega contra el Autómata, con un amigo en el mismo equipo o en línea</p>
+    </header>
+
+    <div class="main-layout">
+        <aside class="controls-panel">
+            <div class="form-group">
+                <label for="player-name">Tu nombre</label>
+                <input type="text" id="player-name" value="Jugador 1" maxlength="20">
+            </div>
+            <div class="form-group" id="player2-group" style="display: none;">
+                <label for="player2-name">Nombre del segundo jugador</label>
+                <input type="text" id="player2-name" value="Jugador 2" maxlength="20">
+            </div>
+            <div class="form-group">
+                <label for="game-select">Juego</label>
+                <select id="game-select"><option value="chess">Ajedrez</option></select>
+            </div>
+            <div class="form-group">
+                <label for="mode-select">Modo de juego</label>
+                <select id="mode-select">
+                    <option value="ai">Vs. Autómata</option>
+                    <option value="local">Vs. Humano (Local)</option>
+                    <option value="online">Online (otra computadora)</option>
+                </select>
+            </div>
+            <div class="network-panel" id="network-panel" style="display: none;">
+                <label for="my-peer-id">Tu ID (compártelo con tu rival)</label>
+                <input type="text" id="my-peer-id" readonly>
+                <label for="remote-peer-id">ID de tu rival</label>
+                <input type="text" id="remote-peer-id" placeholder="Pega aquí el ID del rival">
+                <button id="connect-btn" type="button">Conectar</button>
+            </div>
+            <div class="form-group" id="difficulty-group">
+                <label for="difficulty-select">Dificultad del Autómata</label>
+                <select id="difficulty-select">
+                    <option value="learn">Aprendiz (al azar)</option>
+                    <option value="easy">Fácil</option>
+                    <option value="normal">Normal</option>
+                    <option value="hard">Difícil</option>
+                    <option value="champ" selected>Leyenda</option>
+                </select>
+            </div>
+            <div class="form-group" id="timer-config-group">
+                <label for="timer-select">Tiempo por jugador</label>
+                <select id="timer-select">
+                    <option value="0">Sin límite</option>
+                    <option value="60">1 minuto</option>
+                    <option value="180">3 minutos</option>
+                    <option value="300">5 minutos</option>
+                    <option value="600">10 minutos</option>
+                    <option value="custom">Personalizado...</option>
+                </select>
+                <div class="timer-custom-box" id="timer-custom-group" style="display: none;">
+                    <div class="timer-custom-field"><input type="number" id="timer-custom-min" min="0" max="99" step="1" value="2" aria-label="Minutos"><span>min</span></div>
+                    <div class="timer-custom-field"><input type="number" id="timer-custom-sec" min="0" max="59" step="1" value="30" aria-label="Segundos"><span>seg</span></div>
+                </div>
+            </div>
+            <div class="switch-container">
+                <span>Mostrar ayuda de piezas</span>
+                <label class="switch">
+                    <input type="checkbox" id="tutorial-switch" checked>
+                    <span class="slider"></span>
+                </label>
+            </div>
+            <button id="start-btn" type="button">Iniciar / Reiniciar Juego</button>
+            <div class="scoreboard">
+                <div class="score-box"><div id="p1-label">Jugador 1</div><div class="score-value" id="p1-score">0</div></div>
+                <div class="score-box"><div id="p2-label">Autómata</div><div class="score-value" id="p2-score">0</div></div>
+            </div>
+        </aside>
+
+        <main class="game-panel">
+            <div class="objective-card">
+                <h2>Objetivo del juego</h2>
+                <p id="objective-text"></p>
+                <ul id="objective-steps"></ul>
+            </div>
+            <div class="status-msg" id="status-msg"></div>
+            <div class="timer-display" id="timer-display" style="display: none;">
+                <div class="timer-box"><small id="p1-timer-name"></small><span id="p1-timer">00:00</span></div>
+                <div class="timer-box"><small id="p2-timer-name"></small><span id="p2-timer">00:00</span></div>
+            </div>
+            <div id="board-container"></div>
+        </main>
+
+        <aside class="info-side-panel">
+            <div class="tutorial-card" id="tutorial-card">
+                <h3 id="piece-info-title"></h3>
+                <p id="piece-info-desc"></p>
+                <p><strong>¿Cómo se mueve?</strong> <span id="piece-info-movement"></span></p>
+            </div>
+            <div class="history-container">
+                <div class="history-title">Historial de movimientos</div>
+                <div class="mini-wrap">
+                    <div class="mini-board" id="mini-board"></div>
+                    <div class="mini-nav">
+                        <button type="button" onclick="miniStep(-1)" aria-label="Movimiento anterior">&#9664;</button>
+                        <button type="button" onclick="miniStep(1)" aria-label="Movimiento siguiente">&#9654;</button>
+                    </div>
+                    <div id="mini-caption"></div>
+                </div>
+                <div class="history-grid" id="history-grid"></div>
+            </div>
+            <div class="captured-box" id="captured-box"></div>
+        </aside>
+    </div>
+
+    <div id="win-card" class="win-overlay">
+        <div class="win-explanation-card">
+            <h3 id="win-title"></h3>
+            <p id="win-reason"></p>
+            <button id="quick-restart-btn" type="button">Reinicio rápido</button>
+            <button id="win-close-btn" type="button" class="secondary">Ver tablero</button>
+        </div>
+    </div>
+
+    <script src="js/confetti.js"></script>
+    <script src="js/audio.js"></script>
+    <script src="js/ui.js"></script>
+    <script src="js/chess.js"></script>
+    <script src="js/network.js"></script>
+    <script src="js/main.js"></script>
+</body>
+</html>
