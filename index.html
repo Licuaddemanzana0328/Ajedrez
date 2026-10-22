@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Centro de Juegos: Ajedrez</title>
+    <title> Ajedrez</title>
     <link rel="stylesheet" href="css/styles.css">
     <script>
         // Si algo falla, el motivo exacto aparece abajo en pantalla
@@ -21,7 +21,7 @@
 <body>
     <header>
         <h1>Centro de Juegos: Ajedrez</h1>
-        <p>Juega contra el Bot, con un amigo en el mismo equipo o en línea</p>
+        <p>Juega contra el Bot o con un amigo en línea</p>
     </header>
 
     <div class="main-layout">
@@ -52,8 +52,6 @@
                 <label for="my-peer-id">Tu código (compártelo con tu rival)</label>
                 <input type="text" id="my-peer-id" readonly>
                 <label for="remote-peer-id">Código de tu rival</label>
-                <input type="text" id="remote-peer-id" placeholder="Ej: K7P2M" maxlength="5" autocomplete="off"
-                    style="text-transform: uppercase;">
                 <input type="text" id="remote-peer-id" placeholder="Pega aquí el ID del rival">
                 <button id="connect-btn" type="button">Conectar</button>
             </div>
@@ -62,9 +60,9 @@
                 <select id="difficulty-select">
                     <option value="learn">Aprendiz (al azar)</option>
                     <option value="easy">Fácil</option>
-                    <option value="normal"selected>Normal</option>
+                    <option value="normal"selected >Normal</option>
                     <option value="hard">Difícil</option>
-                    <option value="champ">Leyenda</option>
+                    <option value="champ" >Leyenda</option>
                 </select>
             </div>
             <div class="form-group" id="timer-config-group">

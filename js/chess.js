@@ -464,4 +464,4 @@ function checkChessWin() {
     if (!whiteKing) { finishGame('p2', 'El Rey Blanco fue capturado.'); return true; }
     if (!blackKing) { finishGame('p1', 'El Rey Negro fue capturado.'); return true; }
     return false;
-} 
+}
