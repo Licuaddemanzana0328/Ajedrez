@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="es">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -16,6 +17,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
 </head>
+
 <body>
     <header>
         <h1>Centro de Juegos: Ajedrez</h1>
@@ -34,7 +36,9 @@
             </div>
             <div class="form-group">
                 <label for="game-select">Juego</label>
-                <select id="game-select"><option value="chess">Ajedrez</option></select>
+                <select id="game-select">
+                    <option value="chess">Ajedrez</option>
+                </select>
             </div>
             <div class="form-group">
                 <label for="mode-select">Modo de juego</label>
@@ -45,9 +49,11 @@
                 </select>
             </div>
             <div class="network-panel" id="network-panel" style="display: none;">
-                <label for="my-peer-id">Tu ID (compártelo con tu rival)</label>
+                <label for="my-peer-id">Tu código (compártelo con tu rival)</label>
                 <input type="text" id="my-peer-id" readonly>
-                <label for="remote-peer-id">ID de tu rival</label>
+                <label for="remote-peer-id">Código de tu rival</label>
+                <input type="text" id="remote-peer-id" placeholder="Ej: K7P2M" maxlength="5" autocomplete="off"
+                    style="text-transform: uppercase;">
                 <input type="text" id="remote-peer-id" placeholder="Pega aquí el ID del rival">
                 <button id="connect-btn" type="button">Conectar</button>
             </div>
@@ -58,7 +64,7 @@
                     <option value="easy">Fácil</option>
                     <option value="normal">Normal</option>
                     <option value="hard">Difícil</option>
-                    <option value="champ" selected>Leyenda</option>
+                    <option value="champ" selected>Normal</option>
                 </select>
             </div>
             <div class="form-group" id="timer-config-group">
@@ -72,21 +78,29 @@
                     <option value="custom">Personalizado...</option>
                 </select>
                 <div class="timer-custom-box" id="timer-custom-group" style="display: none;">
-                    <div class="timer-custom-field"><input type="number" id="timer-custom-min" min="0" max="99" step="1" value="2" aria-label="Minutos"><span>min</span></div>
-                    <div class="timer-custom-field"><input type="number" id="timer-custom-sec" min="0" max="59" step="1" value="30" aria-label="Segundos"><span>seg</span></div>
+                    <div class="timer-custom-field"><input type="number" id="timer-custom-min" min="0" max="99" step="1"
+                            value="2" aria-label="Minutos"><span>min</span></div>
+                    <div class="timer-custom-field"><input type="number" id="timer-custom-sec" min="0" max="59" step="1"
+                            value="30" aria-label="Segundos"><span>seg</span></div>
                 </div>
             </div>
             <div class="switch-container">
                 <span>Mostrar ayuda de piezas</span>
                 <label class="switch">
-                    <input type="checkbox" id="tutorial-switch" checked>
+                    <input type="checkbox" id="tutorial-switch">
                     <span class="slider"></span>
                 </label>
             </div>
             <button id="start-btn" type="button">Iniciar / Reiniciar Juego</button>
             <div class="scoreboard">
-                <div class="score-box"><div id="p1-label">Jugador 1</div><div class="score-value" id="p1-score">0</div></div>
-                <div class="score-box"><div id="p2-label">Bot</div><div class="score-value" id="p2-score">0</div></div>
+                <div class="score-box">
+                    <div id="p1-label">Jugador 1</div>
+                    <div class="score-value" id="p1-score">0</div>
+                </div>
+                <div class="score-box">
+                    <div id="p2-label">Bot</div>
+                    <div class="score-value" id="p2-score">0</div>
+                </div>
             </div>
         </aside>
 
@@ -142,4 +156,5 @@
     <script src="js/network.js"></script>
     <script src="js/main.js"></script>
 </body>
+
 </html>
