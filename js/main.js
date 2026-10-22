@@ -1,7 +1,7 @@
 const state = {
     game: 'chess',
     mode: 'ai',
-    difficulty: 'champ',
+    difficulty: 'normal',
     playerName: 'Jugador 1',
     player2Name: 'Jugador 2',
     scores: { p1: 0, p2: 0 },
@@ -91,4 +91,3 @@ function startGame(opts = {}) {
 
     if (state.mode === 'online' && !opts.remote) sendNetRestart();
 }
- 
