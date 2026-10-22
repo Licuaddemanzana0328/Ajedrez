@@ -76,7 +76,9 @@ function finishGame(winner, reason = '') {
     updateStatus(`${winnerName} ha ganado la partida`);
     document.getElementById('status-msg').classList.add('win');
     showWinExplanation(`Victoria para ${esc(winnerName)}`, reason || defaultReason);
-    launchConfetti();
+    const iWon = state.mode === 'local' || (winner === 'p1') === (state.myColor === 'white');
+    if (iWon) launchConfetti(); else launchDefeat();
+
 }
 
 function quickRestart() {
@@ -211,4 +213,4 @@ function updateCapturedUI() {
 function updateScores() {
     document.getElementById('p1-score').textContent = state.scores.p1;
     document.getElementById('p2-score').textContent = state.scores.p2;
-} 
+}
