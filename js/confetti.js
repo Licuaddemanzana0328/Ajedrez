@@ -108,7 +108,7 @@ function launchDefeat() {
     }));
 
     const start = performance.now();
-    const duration = 4500;
+    const duration = 4000;
 
     (function frame(t) {
         const k = (t - start) / duration;
