@@ -20,6 +20,14 @@ const OBJECTIVES = {
             'Si tu rey o dama están en jaque (casilla roja encendida), deben protegerse.',
             'Gana quien acorrale al Rey o agote el tiempo del rival.'
         ]
+    },
+    uno: {
+        text: '<strong>Quédate sin cartas primero</strong>: juega cartas del mismo color o símbolo que la del mazo central.',
+        steps: [
+            'Haz clic en una carta de tu mano para jugarla (debe coincidir en color o símbolo).',
+            'Si no puedes jugar, roba del mazo. Puedes pasar si la carta robada tampoco vale.',
+            '¡Grita UNO cuando te quede solo 1 carta! El primero en quedarse sin cartas gana.'
+        ]
     }
 };
 
@@ -88,8 +96,11 @@ function quickRestart() {
 
 function updateObjective(game = state.game) {
     const o = OBJECTIVES[game];
-    document.getElementById('objective-text').innerHTML = o.text;
-    document.getElementById('objective-steps').innerHTML = o.steps.map(t => `<li>${t}</li>`).join('');
+    if (!o) return;  // si no hay objetivo definido (e.g. juego desconocido), no hacer nada
+    const textEl = document.getElementById('objective-text');
+    const stepsEl = document.getElementById('objective-steps');
+    if (textEl)  textEl.innerHTML  = o.text;
+    if (stepsEl) stepsEl.innerHTML = o.steps.map(t => `<li>${t}</li>`).join('');
 }
 
 function showTutorialCard(pieceKey) {

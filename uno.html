@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>UNO Extra Supreme - Juego Virtual</title>
+  <meta name="description" content="Juega UNO Extra Supreme online o contra Bots. Cartas especiales, mazo infinito, modo multijugador en tiempo real.">
+  <link rel="stylesheet" href="css/uno.css">
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
+</head>
+
+<body>
+
+  <!-- PANTALLA DE CONFIGURACIÓN DE PARTIDA -->
+  <div id="setup-screen" class="setup-modal">
+    <div class="setup-box">
+      <h1>UNO <span>Extra Supreme("alpha")</span></h1>
+      <p>Configura tu partida (2 a 10 jugadores):</p>
+
+      <div class="form-group">
+        <label for="uno-game-mode">Modo de juego</label>
+        <select id="uno-game-mode">
+          <option value="bots">vs Bots</option>
+          <option value="online">Online (con amigos)</option>
+        </select>
+      </div>
+
+      <div class="form-group" id="uno-count-group">
+        <label for="player-count">Número total de jugadores (2-10)</label>
+        <input type="number" id="player-count" min="2" max="10" value="4">
+      </div>
+
+      <div class="form-group">
+        <label for="your-name">Tu nombre</label>
+        <input type="text" id="your-name" value="Jugador 1" maxlength="12">
+      </div>
+
+      <div class="form-group" id="uno-diff-group">
+        <label for="bot-difficulty">Dificultad de los bots</label>
+        <select id="bot-difficulty">
+          <option value="easy">Fácil</option>
+          <option value="normal" selected>Normal</option>
+          <option value="hard">Difícil</option>
+        </select>
+      </div>
+
+      <button id="start-btn" class="btn-start">¡Iniciar partida!</button>
+      <a class="back-link" href="index.html">← Volver a los juegos</a>
+    </div>
+  </div>
+
+  <!-- PANTALLA PRINCIPAL DE JUEGO -->
+  <div id="game-app" class="game-container hidden">
+
+    <header class="top-bar">
+      <div class="game-info">
+        <span id="turn-indicator" class="pill">Turno: …</span>
+        <span id="direction-indicator" class="pill">↻ Horario</span>
+      </div>
+      <button id="log-toggle-btn" class="btn-menu" aria-label="Historial de juego">
+        <span></span><span></span><span></span>
+      </button>
+    </header>
+
+    <!-- MESA: oponentes arriba / izquierda / derecha, tú abajo -->
+    <main class="table">
+      <div id="group-top" class="seat-group top"><div class="seat-stack"></div></div>
+      <div id="group-left" class="seat-group left"><div class="seat-stack"></div></div>
+
+      <section class="center">
+        <div class="stage">
+          <div id="draw-deck" class="deck" title="Robar carta">
+            <div class="uno-card back"><div class="face"><i class="oval"></i><b class="sym">UNO</b></div></div>
+            <span class="deck-label">MAZO ∞</span>
+          </div>
+
+          <div class="ring-wrap">
+            <div id="dir-ring" class="dir-ring"></div>
+            <div id="color-ring" class="color-ring"></div>
+            <div id="discard-deck" class="discard-spot"></div>
+          </div>
+        </div>
+        <div id="stack-counter" class="stack-badge hidden"></div>
+        <div id="toast-layer" class="toast-layer"></div>
+      </section>
+
+      <div id="group-right" class="seat-group right"><div class="seat-stack"></div></div>
+    </main>
+
+    <!-- TU MANO -->
+    <footer class="me-area">
+      <div id="me-info" class="me-info">
+        <div class="avatar" id="me-avatar"><span class="emoji"></span><b class="count" id="me-count">0</b></div>
+        <div class="name" id="me-name">Tú</div>
+      </div>
+      <div class="hand-wrap">
+        <div id="my-hand" class="hand"></div>
+      </div>
+      <div class="me-actions">
+        <button id="pass-btn" class="btn-action hidden">Pasar turno</button>
+        <button id="uno-btn" class="btn-uno">UNO</button>
+      </div>
+    </footer>
+  </div>
+
+  <!-- SELECTOR DE COLOR: una carta que se abre con un círculo partido -->
+  <div id="color-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="color-title">
+    <div id="color-card" class="color-card">
+      <b class="cc-corner tl" id="cc-tl"></b>
+      <b class="cc-corner br" id="cc-br"></b>
+      <h3 id="color-title">Elige un color</h3>
+
+      <svg class="color-wheel" viewBox="0 0 220 220" aria-hidden="false">
+        <g class="wedges">
+          <path class="wedge red"    data-color="red"    tabindex="0" role="button" aria-label="Rojo"     d="M110 110 L10 110 A100 100 0 0 1 110 10 Z"/>
+          <path class="wedge blue"   data-color="blue"   tabindex="0" role="button" aria-label="Azul"     d="M110 110 L110 10 A100 100 0 0 1 210 110 Z"/>
+          <path class="wedge green"  data-color="green"  tabindex="0" role="button" aria-label="Verde"    d="M110 110 L210 110 A100 100 0 0 1 110 210 Z"/>
+          <path class="wedge yellow" data-color="yellow" tabindex="0" role="button" aria-label="Amarillo" d="M110 110 L110 210 A100 100 0 0 1 10 110 Z"/>
+        </g>
+        <circle class="hub" cx="110" cy="110" r="20"/>
+      </svg>
+
+      <p class="cc-hint">Toca un color</p>
+    </div>
+  </div>
+
+  <!-- INTERCAMBIO CON UN JUGADOR -->
+  <div id="swap-modal" class="modal hidden" role="dialog" aria-modal="true">
+    <div class="modal-content">
+      <h3>Elige con quién intercambiar tu mazo</h3>
+      <div id="swap-players-list" class="swap-list"></div>
+    </div>
+  </div>
+
+  <!-- GANADOR -->
+  <div id="win-modal" class="modal hidden" role="dialog" aria-modal="true">
+    <div class="modal-content win-box">
+      <div id="win-avatar" class="avatar big"><span class="emoji"></span></div>
+      <h2 id="win-title">¡Ganador!</h2>
+      <p id="win-sub"></p>
+      <div class="win-actions">
+        <button id="again-btn" class="btn-start">Jugar de nuevo</button>
+        <button id="menu-btn" class="btn-action">Cambiar configuración</button>
+        <a class="back-link" href="index.html">← Volver a los juegos</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- HISTORIAL -->
+  <aside id="log-drawer" class="log-drawer hidden">
+    <div class="log-header">
+      <span>Historial de juego</span>
+      <button id="close-log-btn" aria-label="Cerrar">&times;</button>
+    </div>
+    <ul id="log-list" class="log-list"></ul>
+  </aside>
+
+  <!-- Medidores invisibles (para calcular tamaños de cartas en las animaciones) -->
+  <div id="probe" class="uno-card probe"></div>
+  <div id="probe-mini" class="uno-card mini probe"></div>
+
+  <script src="js/confetti.js"></script>
+  <script src="js/uno.js"></script>
+  <script>
+    // Mostrar/ocultar opciones del setup según el modo
+    (function() {
+      const modeEl = document.getElementById('uno-game-mode');
+      const countGroup = document.getElementById('uno-count-group');
+      const diffGroup  = document.getElementById('uno-diff-group');
+      if (!modeEl) return;
+
+      function onModeChange() {
+        const isOnline = modeEl.value === 'online';
+        if (countGroup) countGroup.style.display = isOnline ? 'none' : '';
+        if (diffGroup)  diffGroup.style.display  = isOnline ? 'none' : '';
+      }
+      modeEl.addEventListener('change', onModeChange);
+      onModeChange();
+    }());
+  </script>
+</body>
+</html>

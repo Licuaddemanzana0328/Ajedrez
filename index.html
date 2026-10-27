@@ -4,8 +4,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title> Ajedrez</title>
+    <title>Juegos Online — Ajedrez &amp; UNO</title>
+    <meta name="description" content="Juega Ajedrez y UNO online o contra la IA. Multijugador en tiempo real con tus amigos.">
     <link rel="stylesheet" href="css/styles.css">
+    <link rel="stylesheet" href="css/uno.css" id="uno-css" disabled>
+    <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script>
         // Si algo falla, el motivo exacto aparece abajo en pantalla
         window.addEventListener('error', function (e) {
@@ -20,8 +23,8 @@
 
 <body>
     <header>
-        <h1>Ajedrez</h1>
-        <p>Juega contra el Bot o con un amigo en línea</p>
+        <h1 id="main-title">Sala de Juegos</h1>
+        <p id="main-subtitle">Elige tu juego y modo — IA, Local u Online</p>
     </header>
 
     <div class="main-layout">
@@ -38,6 +41,7 @@
                 <label for="game-select">Juego</label>
                 <select id="game-select">
                     <option value="chess">Ajedrez</option>
+                    <option value="uno">UNO Extra Supreme("alpha")</option>
                 </select>
             </div>
             <div class="form-group">
@@ -82,12 +86,17 @@
                             value="30" aria-label="Segundos"><span>seg</span></div>
                 </div>
             </div>
-            <div class="switch-container">
+            <div class="switch-container" id="tutorial-switch-group">
                 <span>Mostrar ayuda de piezas</span>
                 <label class="switch">
                     <input type="checkbox" id="tutorial-switch">
                     <span class="slider"></span>
                 </label>
+            </div>
+            <!-- Config específica de UNO (visible solo cuando game=uno) -->
+            <div class="form-group" id="uno-players-group" style="display:none">
+                <label for="uno-player-count">Nº de jugadores (2–10)</label>
+                <input type="number" id="uno-player-count" min="2" max="10" value="4">
             </div>
             <button id="start-btn" type="button">Iniciar / Reiniciar Juego</button>
             <div class="scoreboard">
@@ -102,7 +111,7 @@
             </div>
         </aside>
 
-        <main class="game-panel">
+        <main class="game-panel" id="chess-panel">
             <div class="objective-card">
                 <h2>Objetivo del juego</h2>
                 <p id="objective-text"></p>
@@ -114,6 +123,15 @@
                 <div class="timer-box"><small id="p2-timer-name"></small><span id="p2-timer">00:00</span></div>
             </div>
             <div id="board-container"></div>
+        </main>
+
+        <!-- Panel UNO embebido (oculto cuando se juega ajedrez) -->
+        <main class="game-panel" id="uno-panel" style="display:none; padding:0; overflow:hidden; min-height:600px; position:relative;">
+            <iframe id="uno-frame"
+                    src="uno.html"
+                    style="width:100%;height:100%;min-height:620px;border:none;border-radius:10px;"
+                    title="UNO Extra Supreme">
+            </iframe>
         </main>
 
         <aside class="info-side-panel">
@@ -153,6 +171,107 @@
     <script src="js/chess.js"></script>
     <script src="js/network.js"></script>
     <script src="js/main.js"></script>
+    <script>
+    // ===== INTEGRACIÓN UNO EN INDEX =====
+    (function () {
+        const gameSelect = document.getElementById('game-select');
+        const modeSelect = document.getElementById('mode-select');
+        const chessPanel = document.getElementById('chess-panel');
+        const unoPanel   = document.getElementById('uno-panel');
+        const unoFrame   = document.getElementById('uno-frame');
+        const infoPanel  = document.querySelector('.info-side-panel');
+        const unoCss     = document.getElementById('uno-css');
+        const timerGroup = document.getElementById('timer-config-group');
+        const tutGroup   = document.getElementById('tutorial-switch-group');
+        const diffGroup  = document.getElementById('difficulty-group');
+        const unoPlayersGroup = document.getElementById('uno-players-group');
+        const mainTitle  = document.getElementById('main-title');
+        const mainSub    = document.getElementById('main-subtitle');
+
+        function switchGame() {
+            const game = gameSelect.value;
+            const mode = modeSelect.value;
+            const isUno = game === 'uno';
+
+            // Paneles principales
+            chessPanel.style.display = isUno ? 'none' : '';
+            unoPanel.style.display   = isUno ? 'flex' : 'none';
+            if (infoPanel) infoPanel.style.display = isUno ? 'none' : '';
+
+            // CSS de UNO
+            unoCss.disabled = !isUno;
+
+            // Controles: ocultar los de ajedrez en modo UNO
+            if (timerGroup) timerGroup.style.display = (isUno) ? 'none' : '';
+            if (tutGroup)   tutGroup.style.display   = (isUno) ? 'none' : '';
+            if (diffGroup)  diffGroup.style.display  = (isUno && mode !== 'ai') ? 'none' : (isUno ? 'flex' : '');
+            if (unoPlayersGroup) unoPlayersGroup.style.display = isUno ? 'flex' : 'none';
+
+            // Título
+            mainTitle.textContent = isUno ? 'UNO Extra Supreme' : 'Ajedrez Online';
+            mainSub.textContent   = isUno
+                ? 'Juega UNO con Bots o con amigos en línea'
+                : 'Juega contra el Bot o con un amigo en línea';
+
+            // Al cambiar a UNO: comunicar configuración al iframe
+            if (isUno) {
+                sendConfigToUno();
+            }
+        }
+
+        function sendConfigToUno() {
+            const mode  = modeSelect.value;
+            const name  = (document.getElementById('player-name').value || 'Jugador 1').trim().slice(0, 12);
+            const count = parseInt(document.getElementById('uno-player-count').value) || 4;
+            const diff  = document.getElementById('difficulty-select').value;
+
+            // Modo online: pasar peer/conn info al iframe via postMessage
+            const msg = { type: 'UNO_CONFIG', name, count, difficulty: diff, mode };
+            if (unoFrame && unoFrame.contentWindow) {
+                unoFrame.contentWindow.postMessage(msg, '*');
+            }
+        }
+
+        // Botón iniciar para UNO
+        const startBtn = document.getElementById('start-btn');
+        const origStart = startBtn.onclick;
+        startBtn.addEventListener('click', function () {
+            if (gameSelect.value === 'uno') {
+                sendConfigToUno();
+                // Decirle al iframe que inicie partida
+                if (unoFrame && unoFrame.contentWindow) {
+                    unoFrame.contentWindow.postMessage({ type: 'UNO_START' }, '*');
+                }
+            }
+        });
+
+        // Escuchar mensajes del iframe UNO (para panel online del index)
+        window.addEventListener('message', function (e) {
+            if (!e.data || typeof e.data !== 'object') return;
+            if (e.data.type === 'UNO_READY') {
+                // El iframe está listo, enviar config actual
+                if (gameSelect.value === 'uno') sendConfigToUno();
+            }
+            if (e.data.type === 'UNO_NEED_PEER') {
+                // El iframe de UNO pide el peer code del index (modo online)
+                const code = document.getElementById('my-peer-id').value;
+                if (unoFrame && unoFrame.contentWindow) {
+                    unoFrame.contentWindow.postMessage({ type: 'UNO_PEER_CODE', code }, '*');
+                }
+            }
+        });
+
+        gameSelect.addEventListener('change', switchGame);
+        modeSelect.addEventListener('change', function () {
+            // re-run refreshPanels (chess) y también ajustar UNO si aplica
+            if (typeof refreshPanels === 'function') refreshPanels();
+            switchGame();
+        });
+
+        // Init
+        switchGame();
+    }());
+    </script>
 </body>
 
 </html>

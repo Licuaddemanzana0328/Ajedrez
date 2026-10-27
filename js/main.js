@@ -40,13 +40,19 @@ function readTimerSeconds() {
 
 function refreshPanels() {
     const mode = document.getElementById('mode-select').value;
-    const show = (id, on) => { document.getElementById(id).style.display = on ? 'flex' : 'none'; };
-    show('network-panel', mode === 'online');
-    show('player2-group', mode === 'local');
-    show('difficulty-group', mode === 'ai');
-    show('timer-config-group', document.getElementById('game-select').value === 'chess');
-    show('timer-custom-group', document.getElementById('timer-select').value === 'custom');
-    if (mode === 'online' && !peer) initNetwork();
+    const game = document.getElementById('game-select').value;
+    const isChess = game === 'chess';
+    const show = (id, on) => {
+        const el = document.getElementById(id);
+        if (el) el.style.display = on ? 'flex' : 'none';
+    };
+    // Panel de red online solo aplica a Ajedrez (UNO tiene su propio panel)
+    show('network-panel', isChess && mode === 'online');
+    show('player2-group', isChess && mode === 'local');
+    show('difficulty-group', isChess && mode === 'ai');
+    show('timer-config-group', isChess);
+    show('timer-custom-group', isChess && document.getElementById('timer-select').value === 'custom');
+    if (isChess && mode === 'online' && !peer) initNetwork();
 }
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -79,6 +85,13 @@ function startGame(opts = {}) {
     hideWinCard();
     hideTutorialCard();
     updateObjective(state.game);
+
+    // Si el juego es UNO, no inicializar el ajedrez
+    if (state.game === 'uno') {
+        // El juego UNO se maneja en su iframe propio
+        return;
+    }
+
     refreshLabels();
     initTimers();
 
@@ -91,3 +104,4 @@ function startGame(opts = {}) {
 
     if (state.mode === 'online' && !opts.remote) sendNetRestart();
 }
+

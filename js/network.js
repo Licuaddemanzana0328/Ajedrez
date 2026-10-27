@@ -1,22 +1,25 @@
+/**
+ * network.js — Módulo de red PeerJS generalizado
+ * Soporta Ajedrez y UNO online. Detecta el juego activo (state.game)
+ * y enruta los mensajes entrantes al handler correcto.
+ */
+
 let peer = null;
 let conn = null;
 let isHost = false;
 
 // Código corto: 5 caracteres (letras y números, sin 0/O/1/I para no confundirse)
-const ID_PREFIX = 'ajedrez-online-';
+const ID_PREFIX = 'juegos-online-';
 const ID_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
-// Servidores STUN de Google (+ TURN público de respaldo para redes estrictas)
+// Servidores STUN gratuitos de Google para WebRTC
 const ICE_CONFIG = {
     iceServers: [
         { urls: 'stun:stun.l.google.com:19302' },
         { urls: 'stun:stun1.l.google.com:19302' },
         { urls: 'stun:stun2.l.google.com:19302' },
         { urls: 'stun:stun3.l.google.com:19302' },
-        { urls: 'stun:stun4.l.google.com:19302' },
-        { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
-        { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
-        { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' }
+        { urls: 'stun:stun4.l.google.com:19302' }
     ]
 };
 
@@ -38,7 +41,8 @@ function createPeer() {
         if (conn && conn.open) { c.close(); return; }
         conn = c;
         isHost = true;
-        state.myColor = 'white';
+        // Ajedrez: el host juega con blancas
+        if (typeof state !== 'undefined') state.myColor = 'white';
         setupConnection();
     });
 
@@ -67,38 +71,69 @@ function initNetwork() {
         if (!peer || peer.destroyed) return;
         conn = peer.connect(ID_PREFIX + code, { reliable: true });
         isHost = false;
-        state.myColor = 'black';
+        // Ajedrez: el invitado juega con negras
+        if (typeof state !== 'undefined') state.myColor = 'black';
         setupConnection();
     });
 }
 
 function setupConnection() {
     conn.on('open', () => {
-        updateStatus(isHost ? 'Rival conectado. Juegas con las blancas.' : 'Conectado. Juegas con las negras.');
-        conn.send({ type: 'handshake', name: state.playerName });
+        const game = (typeof state !== 'undefined') ? state.game : 'chess';
+        if (game === 'chess') {
+            updateStatus(isHost ? 'Rival conectado. Juegas con las blancas.' : 'Conectado. Juegas con las negras.');
+        } else {
+            updateStatus(isHost ? 'Rival conectado. ¡Tú comienzas!' : 'Conectado. ¡Esperando inicio!');
+        }
+        conn.send({ type: 'handshake', name: state ? state.playerName : 'Jugador', game: game });
     });
 
     conn.on('data', (data) => {
         if (!data || typeof data !== 'object') return;
+        const game = (typeof state !== 'undefined') ? state.game : 'chess';
+
         if (data.type === 'handshake') {
-            state.onlineRivalName = String(data.name || 'Rival Online').slice(0, 20);
-            refreshLabels();
-            updateCapturedUI();
-            updateHistoryUI();
-            if (isHost) startGame();
+            if (typeof state !== 'undefined') {
+                state.onlineRivalName = String(data.name || 'Rival Online').slice(0, 20);
+            }
+            if (game === 'chess') {
+                refreshLabels();
+                updateCapturedUI();
+                updateHistoryUI();
+                if (isHost) startGame();
+            } else if (game === 'uno') {
+                // Para UNO la señal de arranque se envía desde el handshake
+                if (isHost && typeof unoNetworkStartGame === 'function') {
+                    unoNetworkStartGame();
+                }
+            }
         } else if (data.type === 'restart') {
-            startGame({ timer: parseInt(data.timer) || 0, remote: true });
+            if (game === 'chess') {
+                startGame({ timer: parseInt(data.timer) || 0, remote: true });
+            } else if (game === 'uno' && typeof unoNetworkRestart === 'function') {
+                unoNetworkRestart(data);
+            }
         } else if (data.type === 'move') {
-            receiveRemoteMove(data);
+            if (game === 'chess') {
+                receiveRemoteMove(data);
+            }
+        } else if (data.type === 'uno_action') {
+            // Mensaje específico de UNO
+            if (typeof unoReceiveNetAction === 'function') {
+                unoReceiveNetAction(data);
+            }
         }
     });
 
     conn.on('close', () => {
-        updateStatus(`${state.onlineRivalName || 'El rival'} se desconectó`);
+        const rivalName = (typeof state !== 'undefined' && state.onlineRivalName) ? state.onlineRivalName : 'El rival';
+        updateStatus(`${rivalName} se desconectó`);
     });
 }
 
+/* ====== AJEDREZ ====== */
 function receiveRemoteMove(d) {
+    if (typeof state === 'undefined') return;
     if (state.mode !== 'online' || state.over || state.turn === state.myColor) return;
     const ok = [d.from && d.from.r, d.from && d.from.c, d.to && d.to.r, d.to && d.to.c].every(v => Number.isInteger(v) && v >= 0 && v < 8);
     if (!ok) return;
@@ -113,5 +148,28 @@ function sendNetMove(payload) {
 }
 
 function sendNetRestart() {
-    if (conn && conn.open) conn.send({ type: 'restart', timer: state.timerSeconds });
+    if (conn && conn.open) {
+        const timer = (typeof state !== 'undefined') ? state.timerSeconds : 0;
+        conn.send({ type: 'restart', timer });
+    }
+}
+
+/* ====== UNO ONLINE — helpers invocados desde uno.js ====== */
+/**
+ * Envía una acción de UNO al rival.
+ * @param {object} action - e.g. { action:'play', cardIdx, card, color } o { action:'draw' } o { action:'pass' }
+ */
+function sendUnoAction(action) {
+    if (conn && conn.open) {
+        conn.send({ type: 'uno_action', ...action });
+    }
+}
+
+/**
+ * Llamada desde uno.js cuando el host quiere arrancar la partida online.
+ */
+function sendUnoStart(config) {
+    if (conn && conn.open) {
+        conn.send({ type: 'restart', unoConfig: config });
+    }
 }

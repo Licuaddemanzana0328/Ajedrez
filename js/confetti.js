@@ -122,7 +122,7 @@ function launchDefeat() {
         // Lluvia
         c.lineWidth = 1.5;
         drops.forEach(d => {
-            c.strokeStyle = `rgba(150, 175, 220, ${d.alpha})`;
+            c.strokeStyle = `rgba(150, 175, 220, ${d.alpha})`; 
             c.beginPath();
             c.moveTo(d.x, d.y);
             c.lineTo(d.x - 2, d.y + d.len);
@@ -133,16 +133,19 @@ function launchDefeat() {
                 d.y = -d.len;
                 d.x = Math.random() * w;
             }
+           
         });
 
-        // Corazones Rotos
+        // Gotas / particulas de derrota
         hearts.forEach(hItem => {
             hItem.y += hItem.vy;
             hItem.sway += 0.03;
             c.save();
-            c.font = hItem.size + 'px serif';
             c.globalAlpha = Math.max(0, 1 - Math.max(0, k - 0.7) / 0.3);
-            c.fillText('💔', hItem.x + Math.sin(hItem.sway) * 15, hItem.y);
+            c.fillStyle = '#60a5fa';
+            c.beginPath();
+            c.arc(hItem.x + Math.sin(hItem.sway) * 15, hItem.y, (hItem.size || 16) * 0.25, 0, Math.PI * 2);
+            c.fill();
             c.restore();
         });
 
