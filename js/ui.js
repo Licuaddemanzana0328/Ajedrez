@@ -26,7 +26,7 @@ const OBJECTIVES = {
         steps: [
             'Haz clic en una carta de tu mano para jugarla (debe coincidir en color o símbolo).',
             'Si no puedes jugar, roba del mazo. Puedes pasar si la carta robada tampoco vale.',
-            '¡Grita UNO cuando te quede solo 1 carta! El primero en quedarse sin cartas gana.'
+            'Cuando te quede 1 sola carta pulsa el botón Un0 antes de que pasen 5 segundos o recibirás cartas de castigo. El primero en quedarse sin cartas gana.'
         ]
     }
 };

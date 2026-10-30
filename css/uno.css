@@ -1,5 +1,5 @@
 /* =========================================================
-   UNO EXTRA SUPREME — mesa vista desde tu asiento
+   Un0 EXTRA SUPREME — mesa vista desde tu asiento
    ========================================================= */
 :root {
   --red: #e23b3b;
@@ -151,8 +151,8 @@ body {
 
 .seat.active .avatar, .me-info.active .avatar { animation: turnRing 1.2s ease-in-out infinite; }
 .seat.active .name, .me-info.active .name { color: var(--gold); }
-.seat.uno .avatar::after {
-  content: 'UNO!'; position: absolute; top: -12px; left: 50%; transform: translateX(-50%) rotate(-6deg);
+.seat.uno .avatar::after, .me-info.uno .avatar::after {
+  content: 'Un0!'; position: absolute; top: -12px; left: 50%; transform: translateX(-50%) rotate(-6deg);
   background: linear-gradient(#ffb02e, #f57c00); color: #fff; font-size: .62rem; font-weight: 700;
   padding: 1px 6px; border-radius: 8px; border: 2px solid #fff; animation: bump .5s;
 }
@@ -329,14 +329,23 @@ body {
 .me-actions { position: absolute; right: 14px; bottom: 12px; display: flex; flex-direction: column; align-items: flex-end; gap: 10px; }
 
 .btn-uno {
+  position: relative; overflow: hidden; display: flex; align-items: center; gap: 8px;
   font: inherit; font-weight: 700; font-size: 1.35rem; letter-spacing: .06em; color: #fff; cursor: pointer;
   background: linear-gradient(#ffb02e, #f57c00); border: 3px solid #fff; border-radius: 12px;
   padding: 6px 16px; transform: rotate(-5deg);
   box-shadow: 0 4px 0 #b25500, 0 6px 12px rgba(0,0,0,.4);
-  transition: transform .15s;
+  transition: transform .15s, filter .2s, background .2s;
 }
-.btn-uno:hover { transform: rotate(-5deg) scale(1.08); }
-.btn-uno.ready { animation: unoReady .7s ease-in-out infinite alternate; }
+.btn-uno:hover:not(:disabled) { transform: rotate(-5deg) scale(1.08); }
+/* Cuenta atrás de 5 s: número + barra que se vacía */
+.btn-uno .uno-count { font-size: .85em; min-width: 1.5em; text-align: center; background: rgba(0,0,0,.3); border-radius: 8px; padding: 0 6px; }
+.btn-uno .uno-count:empty { display: none; }
+.btn-uno .uno-bar { position: absolute; left: 0; bottom: 0; height: 5px; width: var(--left, 0%); background: #fff; opacity: .95; }
+.btn-uno.counting { animation: unoReady .45s ease-in-out infinite alternate; }
+/* Bloqueado: no tienes 1 carta, ya lo dijiste o se acabó el tiempo */
+.btn-uno:disabled { cursor: not-allowed; filter: grayscale(.9) brightness(.65); box-shadow: 0 2px 0 #444; }
+.btn-uno.done { filter: none; background: linear-gradient(#4cd37b, #1f9d4d); box-shadow: 0 4px 0 #14693a, 0 6px 12px rgba(0,0,0,.4); }
+.btn-uno.late { filter: none; background: linear-gradient(#9ca3af, #6b7280); box-shadow: 0 2px 0 #3b4250; }
 .btn-uno.shout { animation: shout .5s; }
 
 .btn-action {

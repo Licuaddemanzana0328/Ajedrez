@@ -12,16 +12,8 @@ let isHost = false;
 const ID_PREFIX = 'juegos-online-';
 const ID_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
-// Servidores STUN gratuitos de Google para WebRTC
-const ICE_CONFIG = {
-    iceServers: [
-        { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' },
-        { urls: 'stun:stun2.l.google.com:19302' },
-        { urls: 'stun:stun3.l.google.com:19302' },
-        { urls: 'stun:stun4.l.google.com:19302' }
-    ]
-};
+// La config WebRTC (STUN + TURN) vive en js/ice-config.js → getIceConfig()
+let peerCreating = false;
 
 function randomCode() {
     let s = '';
@@ -29,12 +21,18 @@ function randomCode() {
     return s;
 }
 
-function createPeer() {
+async function createPeer() {
+    if (peerCreating) return;
+    peerCreating = true;
     const code = randomCode();
-    peer = new Peer(ID_PREFIX + code, { config: ICE_CONFIG });
+    let cfg;
+    try { cfg = await getIceConfig(); } finally { /* si falla, getIceConfig ya devuelve al menos STUN */ }
+    peer = new Peer(ID_PREFIX + code, { config: cfg });
+    peerCreating = false;
 
     peer.on('open', () => {
         document.getElementById('my-peer-id').value = code;
+        showTurnWarning();
     });
 
     peer.on('connection', (c) => {
@@ -58,6 +56,18 @@ function createPeer() {
     });
 }
 
+/** Aviso fijo bajo el panel de red cuando no hay servidor TURN configurado */
+function showTurnWarning() {
+    if (iceHasTurn() || document.getElementById('turn-warning')) return;
+    const panel = document.getElementById('network-panel');
+    if (!panel) return;
+    const w = document.createElement('div');
+    w.id = 'turn-warning';
+    w.textContent = TURN_WARNING;
+    w.style.cssText = 'font-size:.78rem;line-height:1.3;color:#f5c542;background:rgba(245,197,66,.1);border:1px solid rgba(245,197,66,.4);border-radius:8px;padding:6px 8px;margin-top:6px;';
+    panel.appendChild(w);
+}
+
 function initNetwork() {
     if (typeof Peer === 'undefined') {
         updateStatus('No se pudo cargar la conexión online. Revisa tu internet y recarga la página.');
@@ -73,6 +83,8 @@ function initNetwork() {
         isHost = false;
         // Ajedrez: el invitado juega con negras
         if (typeof state !== 'undefined') state.myColor = 'black';
+        updateStatus('Conectando con tu rival…');
+        watchConnection(conn, () => updateStatus(connectionHelp()));
         setupConnection();
     });
 }
