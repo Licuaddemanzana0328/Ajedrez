@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>UNO Extra Supreme - Juego Virtual</title>
-  <meta name="description" content="Juega UNO Extra Supreme online o contra Bots. Cartas especiales, mazo infinito, modo multijugador en tiempo real.">
+  <title>Un0 Extra Supreme - Juego Virtual</title>
+  <meta name="description" content="Juega Un0 Extra Supreme online o contra Bots. Cartas especiales, mazo infinito, modo multijugador en tiempo real.">
   <link rel="stylesheet" href="css/uno.css">
   <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&display=swap" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
@@ -15,7 +15,7 @@
   <!-- PANTALLA DE CONFIGURACIÓN DE PARTIDA -->
   <div id="setup-screen" class="setup-modal">
     <div class="setup-box">
-      <h1>UNO <span>Extra Supreme("alpha")</span></h1>
+      <h1>Un0 <span>Extra Supreme("alpha")</span></h1>
       <p>Configura tu partida (2 a 10 jugadores):</p>
 
       <div class="form-group">
@@ -71,7 +71,7 @@
       <section class="center">
         <div class="stage">
           <div id="draw-deck" class="deck" title="Robar carta">
-            <div class="uno-card back"><div class="face"><i class="oval"></i><b class="sym">UNO</b></div></div>
+            <div class="uno-card back"><div class="face"><i class="oval"></i><b class="sym">Un0</b></div></div>
             <span class="deck-label">MAZO ∞</span>
           </div>
 
@@ -99,7 +99,9 @@
       </div>
       <div class="me-actions">
         <button id="pass-btn" class="btn-action hidden">Pasar turno</button>
-        <button id="uno-btn" class="btn-uno">UNO</button>
+        <button id="uno-btn" class="btn-uno" type="button" disabled title="Púlsalo cuando te quede 1 carta (tienes 5 segundos)">
+          <span class="uno-label">Un0</span><span class="uno-count"></span><i class="uno-bar"></i>
+        </button>
       </div>
     </footer>
   </div>
@@ -161,6 +163,7 @@
   <div id="probe-mini" class="uno-card mini probe"></div>
 
   <script src="js/confetti.js"></script>
+  <script src="js/ice-config.js"></script>
   <script src="js/uno.js"></script>
   <script>
     // Mostrar/ocultar opciones del setup según el modo

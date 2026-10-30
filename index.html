@@ -4,8 +4,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Juegos Online — Ajedrez &amp; UNO</title>
-    <meta name="description" content="Juega Ajedrez y UNO online o contra la IA. Multijugador en tiempo real con tus amigos.">
+    <title>Juegos Online — Ajedrez &amp; Un0</title>
+    <meta name="description" content="Juega Ajedrez y Un0 online o contra la IA. Multijugador en tiempo real con tus amigos.">
     <link rel="stylesheet" href="css/styles.css">
     <link rel="stylesheet" href="css/uno.css" id="uno-css" disabled>
     <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -41,7 +41,7 @@
                 <label for="game-select">Juego</label>
                 <select id="game-select">
                     <option value="chess">Ajedrez</option>
-                    <option value="uno">UNO Extra Supreme("alpha")</option>
+                    <option value="uno">Un0 Extra Supreme("alpha")</option>
                 </select>
             </div>
             <div class="form-group">
@@ -130,7 +130,7 @@
             <iframe id="uno-frame"
                     src="uno.html"
                     style="width:100%;height:100%;min-height:620px;border:none;border-radius:10px;"
-                    title="UNO Extra Supreme">
+                    title="Un0 Extra Supreme">
             </iframe>
         </main>
 
@@ -169,6 +169,7 @@
     <script src="js/audio.js"></script>
     <script src="js/ui.js"></script>
     <script src="js/chess.js"></script>
+    <script src="js/ice-config.js"></script>
     <script src="js/network.js"></script>
     <script src="js/main.js"></script>
     <script>
@@ -208,9 +209,9 @@
             if (unoPlayersGroup) unoPlayersGroup.style.display = isUno ? 'flex' : 'none';
 
             // Título
-            mainTitle.textContent = isUno ? 'UNO Extra Supreme' : 'Ajedrez Online';
+            mainTitle.textContent = isUno ? 'Un0 Extra Supreme("alpha")' : 'Ajedrez Online';
             mainSub.textContent   = isUno
-                ? 'Juega UNO con Bots o con amigos en línea'
+                ? 'Juega Un0 con Bots o con amigos en línea'
                 : 'Juega contra el Bot o con un amigo en línea';
 
             // Al cambiar a UNO: comunicar configuración al iframe
