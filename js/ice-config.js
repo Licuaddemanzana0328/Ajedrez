@@ -77,7 +77,7 @@ function connectionHelp() {
 }
 
 /** Aviso permanente cuando no hay TURN (se muestra junto al código de sala). */
-const TURN_WARNING = 'Sin servidor TURN configurado: la conexión entre redes distintas puede fallar. Mira js/ice-config.js.';
+//const TURN_WARNING = 'Sin servidor TURN configurado: la conexión entre redes distintas puede fallar. Mira js/ice-config.js.';
 
 /**
  * Vigila una DataConnection de PeerJS: si no se abre en `timeoutMs` o el ICE falla,
