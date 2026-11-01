@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Blackjack - Mesa de casino</title>
+  <meta name="description" content="Blackjack recreativo con fichas virtuales. Juega solo contra el crupier o con amigos online. No usa dinero real.">
+  <link rel="stylesheet" href="css/blackjack.css">
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Playfair+Display:wght@600;800&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
+</head>
+<body>
+
+  <!-- Símbolos de los palos (vectoriales, sin emojis) -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <defs>
+      <symbol id="s-S" viewBox="0 0 100 100"><path fill="currentColor" d="M50 3C50 3 7 37 7 62c0 14 11 22 22 22 8 0 14-4 17-10-1 10-5 18-13 22h34c-8-4-12-12-13-22 3 6 9 10 17 10 11 0 22-8 22-22C93 37 50 3 50 3z"/></symbol>
+      <symbol id="s-H" viewBox="0 0 100 100"><path fill="currentColor" d="M50 92C10 62 2 42 2 28 2 14 14 5 27 5c10 0 19 6 23 15 4-9 13-15 23-15 13 0 25 9 25 23 0 14-8 34-48 64z"/></symbol>
+      <symbol id="s-D" viewBox="0 0 100 100"><path fill="currentColor" d="M50 3l40 47-40 47L10 50z"/></symbol>
+      <symbol id="s-C" viewBox="0 0 100 100"><g fill="currentColor"><circle cx="50" cy="28" r="23"/><circle cx="25" cy="62" r="23"/><circle cx="75" cy="62" r="23"/><path d="M44 55h12l8 40H36z"/></g></symbol>
+    </defs>
+  </svg>
+
+  <!-- ===================== PANTALLA DE INICIO ===================== -->
+  <div id="setup-screen" class="setup-modal">
+    <div class="setup-box">
+      <h1>Black<span>jack</span></h1>
+      <p class="sub">Mesa de casino recreativa</p>
+
+      <div class="tabs">
+        <button id="tab-solo" class="tab active" type="button">Solo</button>
+        <button id="tab-online" class="tab" type="button">Online</button>
+      </div>
+
+      <div class="form-group">
+        <label for="bj-name">Tu nombre</label>
+        <input type="text" id="bj-name" value="Jugador 1" maxlength="12">
+      </div>
+
+      <!-- Solo contra el crupier (con bots opcionales en la mesa) -->
+      <section id="pane-solo">
+        <div class="form-group">
+          <label for="solo-bots">Bots acompañándote en la mesa (0-4)</label>
+          <input type="number" id="solo-bots" min="0" max="4" value="2">
+        </div>
+        <div class="form-group">
+          <label for="rule-solo">Crupier con 17 blando</label>
+          <select id="rule-solo">
+            <option value="stand">Se planta (hasta 17 o más)</option>
+            <option value="hit">Pide carta (Hit soft 17)</option>
+          </select>
+        </div>
+        <button id="solo-start" class="btn-start" type="button">Sentarme a la mesa</button>
+      </section>
+
+      <!-- Online -->
+      <section id="pane-online" class="hidden">
+        <div id="online-choose">
+          <button id="host-btn" class="btn-start" type="button">Crear mesa</button>
+          <div class="or"><span>o únete a una mesa</span></div>
+          <div class="join-row">
+            <input type="text" id="join-code" maxlength="5" placeholder="CÓDIGO" autocomplete="off" spellcheck="false">
+            <button id="join-btn" class="btn-action" type="button">Unirse</button>
+          </div>
+        </div>
+
+        <div id="lobby" class="hidden">
+          <div class="room-code">
+            <small>Código de la mesa</small>
+            <b id="room-code">·····</b>
+            <div class="room-actions">
+              <button id="copy-code" class="btn-mini" type="button">Copiar código</button>
+              <button id="copy-link" class="btn-mini" type="button">Copiar enlace</button>
+            </div>
+          </div>
+          <ul id="lobby-list" class="lobby-list"></ul>
+          <div id="host-opts">
+            <div class="bots-row">
+              <span>Bots extra</span>
+              <button id="bots-minus" class="btn-step" type="button" aria-label="Menos bots">−</button>
+              <b id="bot-n">0</b>
+              <button id="bots-plus" class="btn-step" type="button" aria-label="Más bots">+</button>
+            </div>
+            <div class="bots-row">
+              <span>Crupier con 17 blando</span>
+              <select id="rule-online">
+                <option value="stand">Se planta</option>
+                <option value="hit">Pide carta</option>
+              </select>
+            </div>
+            <button id="host-start" class="btn-start" type="button">Abrir la mesa</button>
+          </div>
+          <p id="guest-wait" class="guest-wait hidden">Esperando a que el anfitrión abra la mesa…</p>
+          <button id="leave-lobby" class="btn-action wide" type="button">Salir de la mesa</button>
+        </div>
+        <p id="net-status" class="net-status"></p>
+      </section>
+
+      <p class="legal">Juego recreativo con fichas virtuales. No se usa ni se gana dinero real.</p>
+      <a class="back-link" href="index.html">← Volver a los juegos</a>
+    </div>
+  </div>
+
+  <!-- ===================== MESA ===================== -->
+  <div id="game-app" class="bj-app hidden">
+    <header class="bj-top">
+      <div class="pills">
+        <span class="pill" id="round-pill">Ronda 1</span>
+        <span class="pill" id="limits-pill">Mín 10 · Máx 500</span>
+        <span class="pill" id="shoe-pill">Zapato: 312</span>
+      </div>
+      <button id="leave-btn" class="pill btn-leave" type="button">Salir</button>
+    </header>
+
+    <main class="table-wrap" id="table-wrap">
+      <div class="table" id="table">
+        <!-- Decoración del fieltro: arcos, texto y palos como en las mesas reales -->
+        <svg class="felt-art" viewBox="0 0 100 58" aria-hidden="true">
+          <defs>
+            <path id="arc-ins" d="M19 23.6 Q50 39.5 81 23.6"/>
+          </defs>
+          <g fill="none" stroke="rgba(235,240,235,.16)" stroke-width=".35" stroke-linecap="round">
+            <path d="M13 21 Q50 44 87 21"/>
+            <path d="M19 17 Q50 33 81 17"/>
+            <path d="M6 4 C14 14 22 6 30 16 S 40 30 50 22"/>
+            <path d="M94 4 C86 14 78 6 70 16 S 60 30 50 22"/>
+            <path d="M3 30 C10 36 14 30 20 40"/>
+            <path d="M97 30 C90 36 86 30 80 40"/>
+          </g>
+          <path d="M19 22.2 Q50 38 81 22.2" fill="none" stroke="rgba(190,200,190,.20)" stroke-width="5" stroke-linecap="round"/>
+          <text class="arc-text"><textPath href="#arc-ins" startOffset="50%" text-anchor="middle">PAYS 2 TO 1  ·  INSURANCE  ·  PAYS 2 TO 1</textPath></text>
+          <g fill="rgba(210,220,210,.13)" color="rgba(210,220,210,.13)">
+            <use href="#s-S" x="19" y="9" width="8" height="8"/>
+            <use href="#s-H" x="73" y="9" width="8" height="8"/>
+            <use href="#s-C" x="9" y="31" width="7" height="7"/>
+            <use href="#s-D" x="84" y="31" width="7" height="7"/>
+            <use href="#s-S" x="45" y="45" width="5" height="5" opacity=".6"/>
+          </g>
+          <text id="rule-text" class="side-text" x="23" y="9" transform="rotate(-11 23 9)" text-anchor="middle">DEALER STANDS ON ALL 17s</text>
+          <text id="rule-text2" class="side-text" x="77" y="9" transform="rotate(11 77 9)" text-anchor="middle">DEALER STANDS ON ALL 17s</text>
+          <text class="pay-text" x="50" y="18.6" text-anchor="middle">BLACKJACK PAYS 3 TO 2</text>
+        </svg>
+
+        <!-- Bandeja de fichas de la casa y zapato de cartas (como en la foto) -->
+        <div class="tray" id="tray" aria-hidden="true">
+          <i class="ts red"></i><i class="ts red"></i><i class="ts blue"></i><i class="ts blue"></i>
+          <i class="ts green"></i><i class="ts green"></i><i class="ts white"></i><i class="ts white"></i>
+        </div>
+        <div class="shoe" id="shoe" aria-hidden="true"><div class="shoe-back"></div><div class="shoe-back b2"></div><div class="shoe-box"></div></div>
+        <div class="discard" aria-hidden="true"></div>
+
+        <div class="dealer" id="dealer">
+          <div class="dealer-label">CRUPIER</div>
+          <div class="cards" id="dealer-cards"></div>
+          <div class="total" id="dealer-total"></div>
+        </div>
+
+        <div id="seats"></div>
+        <div class="center-msg" id="center-msg"></div>
+        <div class="toast-layer" id="toast-layer"></div>
+      </div>
+    </main>
+
+    <!-- Panel del jugador: fichas y acciones -->
+    <footer class="hud" id="hud">
+      <div class="hud-left">
+        <div class="hud-name" id="me-name">Tú</div>
+        <div class="hud-bank"><span class="mini-chip"></span><b id="me-chips">1000</b><small>fichas</small></div>
+        <div class="hud-bet">Apuesta: <b id="me-bet">0</b></div>
+      </div>
+
+      <div class="hud-center">
+        <!-- Apostar -->
+        <div class="bet-controls" id="bet-controls">
+          <div class="chip-rack" id="chip-rack"></div>
+          <div class="bet-buttons">
+            <button id="btn-clear" class="btn-sec" type="button">Borrar</button>
+            <button id="btn-rebet" class="btn-sec" type="button">Repetir</button>
+            <button id="btn-deal" class="btn-main" type="button">Repartir</button>
+            <button id="btn-rebuy" class="btn-main gold hidden" type="button">Recargar 1000</button>
+          </div>
+        </div>
+
+        <!-- Seguro -->
+        <div class="ins-box hidden" id="ins-box">
+          <span id="ins-text">¿Seguro?</span>
+          <button id="btn-ins-yes" class="btn-main gold" type="button">Sí</button>
+          <button id="btn-ins-no" class="btn-sec" type="button">No</button>
+        </div>
+
+        <!-- Jugar la mano -->
+        <div class="play-actions hidden" id="play-actions">
+          <button id="btn-hit" class="act hit" type="button"><b>Carta</b><small>Pedir</small></button>
+          <button id="btn-stand" class="act stand" type="button"><b>Plantarse</b><small>Quedarme</small></button>
+          <button id="btn-double" class="act dbl" type="button"><b>Doblar</b><small>x2 + 1 carta</small></button>
+          <button id="btn-split" class="act split" type="button"><b>Dividir</b><small>2 manos</small></button>
+        </div>
+      </div>
+
+      <div class="hud-right">
+        <div class="hud-msg" id="hud-msg"></div>
+        <div class="hud-timer" id="hud-timer"></div>
+      </div>
+    </footer>
+  </div>
+
+  <script src="js/confetti.js"></script>
+  <script src="js/ice-config.js"></script>
+  <script src="js/blackjack.js"></script>
+</body>
+</html>

@@ -21,6 +21,14 @@ const OBJECTIVES = {
             'Gana quien acorrale al Rey o agote el tiempo del rival.'
         ]
     },
+    blackjack: {
+        text: '<strong>Consigue una mano más cercana a 21 que el crupier</strong> sin pasarte. Juego recreativo con fichas virtuales.',
+        steps: [
+            'Apuesta con fichas y recibe 2 cartas. Del 2 al 10 valen su número, J/Q/K valen 10 y el As vale 1 u 11.',
+            'Carta, Plantarte, Doblar (x2 y una carta) o Dividir si tienes dos cartas del mismo valor.',
+            'Blackjack paga 3:2; ganar paga 1:1; el seguro paga 2:1 si el crupier tiene Blackjack.'
+        ]
+    },
     uno: {
         text: '<strong>Quédate sin cartas primero</strong>: juega cartas del mismo color o símbolo que la del mazo central.',
         steps: [

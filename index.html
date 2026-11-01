@@ -4,8 +4,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Juegos Online — Ajedrez &amp; Un0</title>
-    <meta name="description" content="Juega Ajedrez y Un0 online o contra la IA. Multijugador en tiempo real con tus amigos.">
+    <title>Juegos Online — Ajedrez, Un0 &amp; Blackjack</title>
+    <meta name="description" content="Juega Ajedrez, Un0 y Blackjack online o contra la IA. Multijugador en tiempo real con tus amigos.">
     <link rel="stylesheet" href="css/styles.css">
     <link rel="stylesheet" href="css/uno.css" id="uno-css" disabled>
     <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -42,6 +42,7 @@
                 <select id="game-select">
                     <option value="chess">Ajedrez</option>
                     <option value="uno">Un0 Extra Supreme("alpha")</option>
+                    <option value="blackjack">Blackjack</option>
                 </select>
             </div>
             <div class="form-group">
@@ -134,6 +135,15 @@
             </iframe>
         </main>
 
+        <!-- Panel Blackjack embebido (mesa de casino con fichas virtuales) -->
+        <main class="game-panel" id="bj-panel" style="display:none; padding:0; overflow:hidden; min-height:720px; position:relative; grid-column: 2 / -1;">
+            <iframe id="bj-frame"
+                    src="blackjack.html"
+                    style="width:100%;height:calc(100vh - 125px);min-height:720px;border:none;border-radius:10px;"
+                    title="Blackjack">
+            </iframe>
+        </main>
+
         <aside class="info-side-panel">
             <div class="tutorial-card" id="tutorial-card">
                 <h3 id="piece-info-title"></h3>
@@ -173,13 +183,15 @@
     <script src="js/network.js"></script>
     <script src="js/main.js"></script>
     <script>
-    // ===== INTEGRACIÓN UNO EN INDEX =====
+    // ===== INTEGRACIÓN DE JUEGOS EN IFRAME (Un0 y Blackjack) =====
     (function () {
         const gameSelect = document.getElementById('game-select');
         const modeSelect = document.getElementById('mode-select');
         const chessPanel = document.getElementById('chess-panel');
         const unoPanel   = document.getElementById('uno-panel');
+        const bjPanel    = document.getElementById('bj-panel');
         const unoFrame   = document.getElementById('uno-frame');
+        const bjFrame    = document.getElementById('bj-frame');
         const infoPanel  = document.querySelector('.info-side-panel');
         const unoCss     = document.getElementById('uno-css');
         const timerGroup = document.getElementById('timer-config-group');
@@ -189,84 +201,90 @@
         const mainTitle  = document.getElementById('main-title');
         const mainSub    = document.getElementById('main-subtitle');
 
+        const TEXTS = {
+            chess:     { title: 'Ajedrez Online', sub: 'Juega contra el Bot o con un amigo en línea' },
+            uno:       { title: 'Un0 Extra Supreme("alpha")', sub: 'Juega Un0 con Bots o con amigos en línea' },
+            blackjack: { title: 'Blackjack', sub: 'Mesa de casino con fichas virtuales: solo o con amigos en línea' }
+        };
+
+        function playerName() {
+            return (document.getElementById('player-name').value || 'Jugador 1').trim().slice(0, 12);
+        }
+
         function switchGame() {
             const game = gameSelect.value;
             const mode = modeSelect.value;
             const isUno = game === 'uno';
+            const isBj  = game === 'blackjack';
+            const isChess = !isUno && !isBj;
 
             // Paneles principales
-            chessPanel.style.display = isUno ? 'none' : '';
+            chessPanel.style.display = isChess ? '' : 'none';
             unoPanel.style.display   = isUno ? 'flex' : 'none';
-            if (infoPanel) infoPanel.style.display = isUno ? 'none' : '';
-
-            // CSS de UNO
+            bjPanel.style.display    = isBj ? 'flex' : 'none';
+            if (infoPanel) infoPanel.style.display = isChess ? '' : 'none';
             unoCss.disabled = !isUno;
 
-            // Controles: ocultar los de ajedrez en modo UNO
-            if (timerGroup) timerGroup.style.display = (isUno) ? 'none' : '';
-            if (tutGroup)   tutGroup.style.display   = (isUno) ? 'none' : '';
-            if (diffGroup)  diffGroup.style.display  = (isUno && mode !== 'ai') ? 'none' : (isUno ? 'flex' : '');
+            // Controles propios de cada juego
+            if (timerGroup) timerGroup.style.display = isChess ? '' : 'none';
+            if (tutGroup)   tutGroup.style.display   = isChess ? '' : 'none';
+            if (diffGroup)  diffGroup.style.display  = isUno && mode === 'ai' ? 'flex' : (isChess ? '' : 'none');
             if (unoPlayersGroup) unoPlayersGroup.style.display = isUno ? 'flex' : 'none';
 
             // Título
-            mainTitle.textContent = isUno ? 'Un0 Extra Supreme("alpha")' : 'Ajedrez Online';
-            mainSub.textContent   = isUno
-                ? 'Juega Un0 con Bots o con amigos en línea'
-                : 'Juega contra el Bot o con un amigo en línea';
+            const t = TEXTS[game] || TEXTS.chess;
+            mainTitle.textContent = t.title;
+            mainSub.textContent = t.sub;
 
-            // Al cambiar a UNO: comunicar configuración al iframe
-            if (isUno) {
-                sendConfigToUno();
-            }
+            // Al cambiar a un juego en iframe: comunicar la configuración
+            if (isUno) sendConfigToUno();
+            if (isBj)  sendConfigToBj();
         }
 
         function sendConfigToUno() {
             const mode  = modeSelect.value;
-            const name  = (document.getElementById('player-name').value || 'Jugador 1').trim().slice(0, 12);
             const count = parseInt(document.getElementById('uno-player-count').value) || 4;
             const diff  = document.getElementById('difficulty-select').value;
-
-            // Modo online: pasar peer/conn info al iframe via postMessage
-            const msg = { type: 'UNO_CONFIG', name, count, difficulty: diff, mode };
-            if (unoFrame && unoFrame.contentWindow) {
-                unoFrame.contentWindow.postMessage(msg, '*');
-            }
+            const msg = { type: 'UNO_CONFIG', name: playerName(), count, difficulty: diff, mode };
+            if (unoFrame && unoFrame.contentWindow) unoFrame.contentWindow.postMessage(msg, '*');
         }
 
-        // Botón iniciar para UNO
-        const startBtn = document.getElementById('start-btn');
-        const origStart = startBtn.onclick;
-        startBtn.addEventListener('click', function () {
+        function sendConfigToBj() {
+            // "Vs. Humano (Local)" no aplica al Blackjack: se juega en solitario con la mesa
+            const mode = modeSelect.value === 'online' ? 'online' : 'solo';
+            if (bjFrame && bjFrame.contentWindow) bjFrame.contentWindow.postMessage({ type: 'BJ_CONFIG', name: playerName(), mode }, '*');
+        }
+
+        // Botón iniciar
+        document.getElementById('start-btn').addEventListener('click', function () {
             if (gameSelect.value === 'uno') {
                 sendConfigToUno();
-                // Decirle al iframe que inicie partida
-                if (unoFrame && unoFrame.contentWindow) {
-                    unoFrame.contentWindow.postMessage({ type: 'UNO_START' }, '*');
-                }
+                if (unoFrame && unoFrame.contentWindow) unoFrame.contentWindow.postMessage({ type: 'UNO_START' }, '*');
+            } else if (gameSelect.value === 'blackjack') {
+                sendConfigToBj();
+                if (bjFrame && bjFrame.contentWindow) bjFrame.contentWindow.postMessage({ type: 'BJ_START' }, '*');
             }
         });
 
-        // Escuchar mensajes del iframe UNO (para panel online del index)
+        // Mensajes que llegan de los iframes
         window.addEventListener('message', function (e) {
             if (!e.data || typeof e.data !== 'object') return;
-            if (e.data.type === 'UNO_READY') {
-                // El iframe está listo, enviar config actual
-                if (gameSelect.value === 'uno') sendConfigToUno();
-            }
+            if (e.data.type === 'UNO_READY' && gameSelect.value === 'uno') sendConfigToUno();
+            if (e.data.type === 'BJ_READY'  && gameSelect.value === 'blackjack') sendConfigToBj();
             if (e.data.type === 'UNO_NEED_PEER') {
-                // El iframe de UNO pide el peer code del index (modo online)
                 const code = document.getElementById('my-peer-id').value;
-                if (unoFrame && unoFrame.contentWindow) {
-                    unoFrame.contentWindow.postMessage({ type: 'UNO_PEER_CODE', code }, '*');
-                }
+                if (unoFrame && unoFrame.contentWindow) unoFrame.contentWindow.postMessage({ type: 'UNO_PEER_CODE', code }, '*');
             }
         });
 
         gameSelect.addEventListener('change', switchGame);
         modeSelect.addEventListener('change', function () {
-            // re-run refreshPanels (chess) y también ajustar UNO si aplica
             if (typeof refreshPanels === 'function') refreshPanels();
             switchGame();
+        });
+        document.getElementById('player-name').addEventListener('change', function () {
+            if (gameSelect.value === 'blackjack') sendConfigToBj();
+            if (gameSelect.value === 'uno') sendConfigToUno();
         });
 
         // Init

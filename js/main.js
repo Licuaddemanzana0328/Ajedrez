@@ -86,9 +86,8 @@ function startGame(opts = {}) {
     hideTutorialCard();
     updateObjective(state.game);
 
-    // Si el juego es UNO, no inicializar el ajedrez
-    if (state.game === 'uno') {
-        // El juego UNO se maneja en su iframe propio
+    // Los demás juegos (Un0, Blackjack) se manejan en su iframe propio: no inicializar el ajedrez
+    if (state.game !== 'chess') {
         return;
     }
 
