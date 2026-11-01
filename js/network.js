@@ -3,7 +3,8 @@
  * Soporta Ajedrez y UNO online. Detecta el juego activo (state.game)
  * y enruta los mensajes entrantes al handler correcto.
  */
-
+// Para UNO, el código de red se encuentra en uno-network.js, que importa este módulo y lo extiende.
+//para modificar la cantidad de jugadores, modificar la variable MAX_PLAYERS en uno-network.js
 let peer = null;
 let conn = null;
 let isHost = false;
@@ -45,7 +46,7 @@ async function createPeer() {
     });
 
     peer.on('error', (err) => {
-        if (err.type === 'unavailable-id') {      // el código ya existía: genera otro
+        if (err.type === 'unavailable-id') {
             peer.destroy();
             createPeer();
         } else if (err.type === 'peer-unavailable') {

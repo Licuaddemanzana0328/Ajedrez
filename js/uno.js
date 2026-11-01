@@ -1170,9 +1170,9 @@ function unoRandomCode() {
   return s;
 }
 
-const MAX_UNO_SEATS = 4;
-const SEAT_HUES = [8, 205, 275, 145];
-const BOT_NAMES = ['Luna', 'Max', 'Kiko', 'Zoe'];
+const MAX_UNO_SEATS = 10;
+const SEAT_HUES = [8, 205, 275, 145, 38, 330, 175, 295, 85, 25];
+const BOT_NAMES = ['Luna', 'Max', 'Kiko', 'Zoe', 'Nico', 'Leo', 'Mía', 'Sam', 'Toby', 'Rex'];
 
 const cleanName = (t) => String(t || '').replace(/[<>]/g, '').trim().slice(0, 12) || 'Jugador';
 const myName = () => cleanName($('your-name') ? $('your-name').value : 'Jugador 1');
