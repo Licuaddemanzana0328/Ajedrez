@@ -18,34 +18,77 @@
       <h1>Un0 <span>Extra Supreme("alpha")</span></h1>
       <p>Configura tu partida (2 a 10 jugadores):</p>
 
-      <div class="form-group">
-        <label for="uno-game-mode">Modo de juego</label>
-        <select id="uno-game-mode">
-          <option value="bots">vs Bots</option>
-          <option value="online">Online (con amigos)</option>
-        </select>
+      <div class="tabs">
+        <button id="tab-bots" class="tab active" type="button">vs Bots</button>
+        <button id="tab-online" class="tab" type="button">Online</button>
       </div>
 
-      <div class="form-group" id="uno-count-group">
-        <label for="player-count">Número total de jugadores (2-10)</label>
-        <input type="number" id="player-count" min="2" max="10" value="4">
-      </div>
+      <!-- Selector oculto para compatibilidad con index.html -->
+      <select id="uno-game-mode" style="display:none">
+        <option value="bots">vs Bots</option>
+        <option value="online">Online</option>
+      </select>
 
       <div class="form-group">
         <label for="your-name">Tu nombre</label>
         <input type="text" id="your-name" value="Jugador 1" maxlength="12">
       </div>
 
-      <div class="form-group" id="uno-diff-group">
-        <label for="bot-difficulty">Dificultad de los bots</label>
-        <select id="bot-difficulty">
-          <option value="easy">Fácil</option>
-          <option value="normal" selected>Normal</option>
-          <option value="hard">Difícil</option>
-        </select>
-      </div>
+      <!-- vs Bots -->
+      <section id="pane-bots">
+        <div class="form-group" id="uno-count-group">
+          <label for="player-count">Número total de jugadores (2-10)</label>
+          <input type="number" id="player-count" min="2" max="10" value="4">
+        </div>
 
-      <button id="start-btn" class="btn-start">¡Iniciar partida!</button>
+        <div class="form-group" id="uno-diff-group">
+          <label for="bot-difficulty">Dificultad de los bots</label>
+          <select id="bot-difficulty">
+            <option value="easy">Fácil</option>
+            <option value="normal" selected>Normal</option>
+            <option value="hard">Difícil</option>
+          </select>
+        </div>
+
+        <button id="start-btn" class="btn-start" type="button">¡Iniciar partida!</button>
+      </section>
+
+      <!-- Online -->
+      <section id="pane-online" class="hidden">
+        <div id="online-choose">
+          <button id="host-btn" class="btn-start" type="button">Crear sala</button>
+          <div class="or"><span>o únete a una sala</span></div>
+          <div class="join-row">
+            <input type="text" id="join-code" maxlength="5" placeholder="CÓDIGO" autocomplete="off" spellcheck="false">
+            <button id="join-btn" class="btn-action" type="button">Unirse</button>
+          </div>
+        </div>
+
+        <div id="lobby" class="hidden">
+          <div class="room-code">
+            <small>Código de la sala</small>
+            <b id="room-code">·····</b>
+            <div class="room-actions">
+              <button id="copy-code" class="btn-mini" type="button">Copiar código</button>
+              <button id="copy-link" class="btn-mini" type="button">Copiar enlace</button>
+            </div>
+          </div>
+          <ul id="lobby-list" class="lobby-list"></ul>
+          <div id="host-opts">
+            <div class="bots-row">
+              <span>Bots extra</span>
+              <button id="bots-minus" class="btn-step" type="button" aria-label="Menos bots">−</button>
+              <b id="bot-n">0</b>
+              <button id="bots-plus" class="btn-step" type="button" aria-label="Más bots">+</button>
+            </div>
+            <button id="host-start" class="btn-start" type="button">Abrir la sala</button>
+          </div>
+          <p id="guest-wait" class="guest-wait hidden">Esperando a que el anfitrión abra la sala…</p>
+          <button id="leave-lobby" class="btn-action wide" type="button">Salir de la sala</button>
+        </div>
+        <p id="net-status" class="net-status"></p>
+      </section>
+
       <a class="back-link" href="index.html">← Volver a los juegos</a>
     </div>
   </div>
@@ -58,9 +101,12 @@
         <span id="turn-indicator" class="pill">Turno: …</span>
         <span id="direction-indicator" class="pill">↻ Horario</span>
       </div>
-      <button id="log-toggle-btn" class="btn-menu" aria-label="Historial de juego">
-        <span></span><span></span><span></span>
-      </button>
+      <div class="top-right">
+        <button id="leave-game-btn" class="pill btn-leave" type="button">Salir</button>
+        <button id="log-toggle-btn" class="btn-menu" aria-label="Historial de juego">
+          <span></span><span></span><span></span>
+        </button>
+      </div>
     </header>
 
     <!-- MESA: oponentes arriba / izquierda / derecha, tú abajo -->
@@ -165,22 +211,5 @@
   <script src="js/confetti.js"></script>
   <script src="js/ice-config.js"></script>
   <script src="js/uno.js"></script>
-  <script>
-    // Mostrar/ocultar opciones del setup según el modo
-    (function() {
-      const modeEl = document.getElementById('uno-game-mode');
-      const countGroup = document.getElementById('uno-count-group');
-      const diffGroup  = document.getElementById('uno-diff-group');
-      if (!modeEl) return;
-
-      function onModeChange() {
-        const isOnline = modeEl.value === 'online';
-        if (countGroup) countGroup.style.display = isOnline ? 'none' : '';
-        if (diffGroup)  diffGroup.style.display  = isOnline ? 'none' : '';
-      }
-      modeEl.addEventListener('change', onModeChange);
-      onModeChange();
-    }());
-  </script>
 </body>
 </html>

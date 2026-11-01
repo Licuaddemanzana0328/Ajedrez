@@ -701,13 +701,18 @@ function buildSeats(n) {
   box.innerHTML = '';
   seatEls = [];
   const angles = seatAngles(n);
+  // Asiento central donde se sienta el anfitrión (o posición principal de la mesa)
+  const centerPos = [...Array(n).keys()].sort((a, b) => Math.abs(a - (n - 1) / 2) - Math.abs(b - (n - 1) / 2) || a - b)[0] || 0;
   for (let i = 0; i < n; i++) {
-    const th = (angles[i] * Math.PI) / 180;
+    // Rotar visualmente los asientos para que cada jugador (me) se vea en el centro de su pantalla
+    const slot = mod(i - me + centerPos, n);
+    const th = (angles[slot] * Math.PI) / 180;
     const x = 50 + 38 * Math.cos(th);
     const y = 7 + 39 * Math.sin(th);
     const el = document.createElement('div');
     el.className = 'seat';
     el.dataset.i = i;
+    el.dataset.slot = slot;
     el.style.left = `${x}%`;
     el.style.top = `${(y / 58) * 100}%`;
     el.innerHTML = `

@@ -87,16 +87,7 @@ const UNO_WINDOW_MS = 5000;
 const UNO_PENALTY = 2;
 const unoTrack = { active: false, declared: false, expired: false, deadline: 0, timer: null, tick: null };
 let unoHold = false;         // true mientras una carta está volando al descarte (la ventana empieza al aterrizar)
-let unoPeerCreating = false;
-let unoStartedOnConn = false;
-
-/* ==================== ESTADO DE RED ONLINE ==================== */
-let unoPeer = null;
-let unoConn = null;
-let unoIsHost = false;
 let unoOnlineMode = false;
-let unoMyIdx = 0;           // 0 = host, 1 = invitado
-let unoRivalName = 'Rival';
 
 /* _rng: cuando se asigna una función, generateRandomCard la usa como fuente aleatoria (para partidas online sincronizadas) */
 let _rng = null;
@@ -425,39 +416,27 @@ function canPlayCard(card) {
 
 /* ============================ ENTRAR / SALIR DE PARTIDA ============================ */
 $('start-btn').addEventListener('click', () => {
-  const modeEl = $('uno-game-mode');
-  const selectedMode = modeEl ? modeEl.value : 'bots';
-
   let count = parseInt($('player-count').value, 10);
   if (isNaN(count)) count = 4;
   count = Math.min(10, Math.max(2, count));
   if ($('player-count')) $('player-count').value = count;
 
   config = {
-    count: selectedMode === 'online' ? 2 : count,
+    count,
     name: ($('your-name').value || 'Jugador 1').trim().slice(0, 12) || 'Jugador 1',
     difficulty: $('bot-difficulty').value,
   };
 
-  if (selectedMode === 'online') {
-    // Inicializar red P2P si no está lista
-    if (!unoPeer || unoPeer.destroyed) {
-      initUnoNetwork();
-    } else if ($('uno-net-panel')) {
-      $('uno-net-panel').classList.remove('hidden');
-    }
-    // No arrancar partida aún — esperar conexión rival
-    return;
-  }
-
+  unoOnlineMode = false;
+  if (typeof unoNet !== 'undefined') unoNet.role = 'solo';
   startGame();
 });
 
 $('again-btn').addEventListener('click', () => {
   $('win-modal').classList.add('hidden');
-  if (unoOnlineMode) {                 // online: solo el anfitrión reparte la nueva partida
-    if (unoIsHost && unoConn && unoConn.open) unoNetworkStartGame();
-    else toast('Espera a que el anfitrión inicie otra partida', { kind: 'info' });
+  if (unoOnlineMode) {
+    if (unoNet.role === 'host') unoBeginOnlineTable();
+    else toast('Espera a que el anfitrión abra otra partida', { kind: 'info' });
     return;
   }
   startGame();
@@ -465,6 +444,7 @@ $('again-btn').addEventListener('click', () => {
 $('menu-btn').addEventListener('click', () => {
   gameToken++;
   resetUnoTrack();
+  if (unoOnlineMode && typeof leaveUnoGame === 'function') leaveUnoGame(false);
   $('win-modal').classList.add('hidden');
   $('game-app').classList.add('hidden');
   $('setup-screen').classList.remove('hidden');
@@ -561,6 +541,11 @@ async function startTurn() {
   }
 
   if (players[activePlayerIdx].isBot) {
+    if (unoOnlineMode && unoNet.role !== 'host') {
+      busy = true;
+      renderAll();
+      return;
+    }
     busy = true;
     renderAll();
     const wait = { easy: 1400, normal: 1000, hard: 700 }[config.difficulty] || 1000;
@@ -570,6 +555,9 @@ async function startTurn() {
   } else {
     busy = (unoOnlineMode && activePlayerIdx !== 0);
     renderAll();
+    if (!busy && unoOnlineMode) {
+      toast('¡Tu turno! Juega una carta o roba.', { kind: 'info', big: true });
+    }
   }
 }
 
@@ -647,10 +635,13 @@ async function playCard(playerIdx, cardIdx) {
   if (['wild', '+4', '+10', '+100'].includes(card.type)) {
     if (playerIdx === 0) {
       activeColor = await chooseColor(card);
-      // Sincronizar color elegido con el rival
+      // Sincronizar color elegido con los demás jugadores
       if (unoOnlineMode) unoSendAction({ action: 'choose_color', color: activeColor });
     } else if (!unoOnlineMode) {
       activeColor = botPickColor(p);
+    } else if (unoOnlineMode && unoNet.role === 'host' && p.isBot) {
+      activeColor = botPickColor(p);
+      unoBroadcastAction({ action: 'choose_color', color: activeColor }, p.globalIdx);
     }
     if (token !== gameToken) return;
     logAction(`${p.name} cambió el color a ${COLOR_ES[activeColor]}`);
@@ -660,18 +651,31 @@ async function playCard(playerIdx, cardIdx) {
 
   } else if (card.type === 'swap_all') {
     sfx.special();
+    if (unoOnlineMode) {
+      if (playerIdx === 0) unoSendAction({ action: 'swap_all' });
+      else if (unoNet.role === 'host' && p.isBot) unoBroadcastAction({ action: 'swap_all' }, p.globalIdx);
+    }
     await swapAllHands();
   } else if (card.type === 'swap_target') {
     sfx.special();
     let target;
     if (playerIdx === 0) {
       target = await chooseSwapTarget();
+      if (unoOnlineMode) {
+        const targetGlobal = players[target].globalIdx !== undefined ? players[target].globalIdx : target;
+        unoSendAction({ action: 'swap_target', target: targetGlobal });
+      }
     } else {
+      if (unoOnlineMode && !p.isBot) return;
       target = -1;
       players.forEach((pl, i) => {
         if (i === playerIdx) return;
         if (target === -1 || pl.hand.length < players[target].hand.length) target = i;
       });
+      if (unoOnlineMode && unoNet.role === 'host' && p.isBot) {
+        const targetGlobal = players[target].globalIdx !== undefined ? players[target].globalIdx : target;
+        unoBroadcastAction({ action: 'swap_target', target: targetGlobal }, p.globalIdx);
+      }
     }
     if (token !== gameToken) return;
     await swapTwoHands(playerIdx, target);
@@ -884,6 +888,7 @@ function unoSyncPlayers() {
     players.forEach((p, i) => {
       if (p.hand.length !== 1) { p.unoSaid = false; p.unoDecided = false; return; }
       if (i !== 0 && p.isBot && !p.unoDecided) {
+        if (unoOnlineMode && unoNet.role !== 'host') return;
         p.unoDecided = true;
         const chance = { easy: 0.55, normal: 0.8, hard: 0.97 }[config.difficulty] || 0.8;
         if (Math.random() < chance) {
@@ -892,6 +897,9 @@ function unoSyncPlayers() {
           toast(`¡${p.name} dijo Un0!`, { big: true });
           logAction(`${p.name} dijo Un0`);
           updateSeat(i);
+          if (unoOnlineMode && unoNet.role === 'host') {
+            unoBroadcastAction({ action: 'uno_say' }, p.globalIdx);
+          }
         }
       }
     });
@@ -949,7 +957,10 @@ async function applyUnoPenalty(idx) {
   logAction(`${p.name} no dijo Un0: roba ${total} cartas y pierde su turno`);
   toast(idx === 0 ? `¡No dijiste Un0! Robas ${total} cartas` : `¡${p.name} no dijo Un0! Roba ${total}`, { kind: 'warn', big: true });
   sfx.penalty();
-  if (unoOnlineMode && idx === 0) unoSendAction({ action: 'uno_penalty', count: total });
+  if (unoOnlineMode) {
+    if (idx === 0) unoSendAction({ action: 'uno_penalty', count: total });
+    else if (unoNet.role === 'host' && p.isBot) unoBroadcastAction({ action: 'uno_penalty', count: total }, p.globalIdx);
+  }
   await sleep(500);
   await giveCards(idx, total);
   if (token !== gameToken) return;
@@ -990,24 +1001,41 @@ async function botPlay() {
   const playable = p.hand.map((c, i) => ({ c, i })).filter((x) => canPlayCard(x.c));
 
   if (playable.length) {
-    await playCard(idx, chooseBotCard(p, playable).i);
+    const chosen = chooseBotCard(p, playable);
+    const card = chosen.c;
+    if (unoOnlineMode && unoNet.role === 'host') {
+      unoBroadcastAction({ action: 'play', card }, p.globalIdx);
+    }
+    await playCard(idx, chosen.i);
     return;
   }
   // Si habia castigo acumulado y el bot no tiene con que responder, se traga el castigo
   if (currentStack > 0) {
+    if (unoOnlineMode && unoNet.role === 'host') {
+      unoBroadcastAction({ action: 'penalty', count: currentStack }, p.globalIdx);
+    }
     await takePenalty(idx);
     if (token !== gameToken) return;
     activePlayerIdx = mod(activePlayerIdx + direction, players.length);
     startTurn();
     return;
   }
+  if (unoOnlineMode && unoNet.role === 'host') {
+    unoBroadcastAction({ action: 'draw', count: 1 }, p.globalIdx);
+  }
   const [drawn] = await giveCards(idx, 1);
   if (token !== gameToken) return;
   logAction(`${p.name} robó una carta.`);
   if (canPlayCard(drawn)) {
     await sleep(350);
+    if (unoOnlineMode && unoNet.role === 'host') {
+      unoBroadcastAction({ action: 'play', card: drawn }, p.globalIdx);
+    }
     await playCard(idx, p.hand.length - 1);
   } else {
+    if (unoOnlineMode && unoNet.role === 'host') {
+      unoBroadcastAction({ action: 'pass' }, p.globalIdx);
+    }
     advanceTurn(null);
   }
 }
@@ -1142,253 +1170,388 @@ function unoRandomCode() {
   return s;
 }
 
-/* ---- Panel de conexión online (minimizable y sin emojis) ---- */
-function buildOnlinePanel() {
-  if ($('uno-net-panel')) return;
+const MAX_UNO_SEATS = 4;
+const SEAT_HUES = [8, 205, 275, 145];
+const BOT_NAMES = ['Luna', 'Max', 'Kiko', 'Zoe'];
 
-  const panel = document.createElement('div');
-  panel.id = 'uno-net-panel';
-  panel.className = 'uno-net-panel';
-  panel.innerHTML = `
-    <div class="uno-net-inner">
-      <div class="uno-net-header">
-        <span class="uno-net-title">Modo Online</span>
-        <div class="uno-net-header-actions">
-          <button id="uno-min-btn" class="uno-icon-btn" title="Minimizar" type="button">_</button>
-          <button id="uno-close-btn" class="uno-icon-btn" title="Cerrar" type="button">&times;</button>
-        </div>
-      </div>
-      <div class="net-row">
-        <label>Tu código (compártelo con tu rival):</label>
-        <div class="net-code-wrap">
-          <input id="uno-my-code" readonly placeholder="Generando…">
-          <button id="uno-copy-btn" title="Copiar código" type="button">Copiar</button>
-        </div>
-      </div>
-      <div class="net-row">
-        <label>Código del rival:</label>
-        <input id="uno-remote-code" placeholder="Pega aquí el código" maxlength="5">
-      </div>
-      <button id="uno-connect-btn" type="button">Conectar con rival</button>
-      <div id="uno-net-status" class="net-status">Esperando conexión…</div>
-      <div id="uno-net-warning" class="net-warning hidden"></div>
-    </div>`;
+const cleanName = (t) => String(t || '').replace(/[<>]/g, '').trim().slice(0, 12) || 'Jugador';
+const myName = () => cleanName($('your-name') ? $('your-name').value : 'Jugador 1');
 
-  const miniBar = document.createElement('div');
-  miniBar.id = 'uno-minibar';
-  miniBar.className = 'uno-minibar hidden';
-  miniBar.innerHTML = `
-    <span id="uno-minibar-text">Online: Sala activa</span>
-    <button id="uno-restore-btn" class="uno-minibar-btn" type="button">Ver sala</button>
-  `;
+const unoNet = {
+  role: 'solo',       // 'solo' | 'host' | 'guest'
+  peer: null,
+  conn: null,         // para invitado: conexión con el anfitrión
+  members: [],        // para anfitrión: [{ name, local: true }, { name, conn }, ...]
+  botsN: 0,
+  started: false,
+  code: '',
+  myGlobalIdx: 0,
+};
 
-  document.body.appendChild(panel);
-  document.body.appendChild(miniBar);
+function unoNetStatus(msg, ok = false) {
+  const el = $('net-status');
+  if (el) {
+    el.textContent = msg || '';
+    el.classList.toggle('ok', !!ok);
+  }
+}
 
-  const minimize = () => {
-    panel.classList.add('hidden');
-    miniBar.classList.remove('hidden');
-    const c = $('uno-my-code') ? $('uno-my-code').value : '';
-    $('uno-minibar-text').textContent = c ? `Sala: ${c}` : 'Modo Online';
-  };
+/* ---------- Pestañas de configuración ---------- */
+function setUnoTab(tab) {
+  $('tab-bots').classList.toggle('active', tab === 'bots');
+  $('tab-online').classList.toggle('active', tab === 'online');
+  $('pane-bots').classList.toggle('hidden', tab !== 'bots');
+  $('pane-online').classList.toggle('hidden', tab !== 'online');
+  const sel = $('uno-game-mode');
+  if (sel) sel.value = tab;
+}
 
-  const restore = () => {
-    miniBar.classList.add('hidden');
-    panel.classList.remove('hidden');
-  };
+$('tab-bots').addEventListener('click', () => { if (unoNet.role === 'solo') setUnoTab('bots'); });
+$('tab-online').addEventListener('click', () => setUnoTab('online'));
 
-  $('uno-min-btn').addEventListener('click', minimize);
-  $('uno-close-btn').addEventListener('click', minimize);
-  $('uno-restore-btn').addEventListener('click', restore);
+function showUnoSetup() {
+  $('game-app').classList.add('hidden');
+  $('setup-screen').classList.remove('hidden');
+}
 
-  $('uno-copy-btn').addEventListener('click', () => {
-    const code = $('uno-my-code').value;
-    if (code) {
-      const ok = () => {
-        $('uno-copy-btn').textContent = 'Copiado';
-        toast('¡Código copiado!');
-        setTimeout(() => { if ($('uno-copy-btn')) $('uno-copy-btn').textContent = 'Copiar'; }, 2000);
-      };
-      const fallback = () => { $('uno-my-code').select(); try { document.execCommand('copy'); ok(); } catch (e) { /* nada */ } };
-      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(code).then(ok, fallback);
-      else fallback();
+/* ---------- Copiar texto ---------- */
+function copyUnoText(text, okMsg) {
+  const done = () => unoNetStatus(okMsg, true);
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(done, () => unoNetStatus('No se pudo copiar'));
+  } else {
+    const ta = document.createElement('textarea');
+    ta.value = text; document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); done(); } catch (e) { unoNetStatus('No se pudo copiar'); }
+    ta.remove();
+  }
+}
+
+$('copy-code').addEventListener('click', () => copyUnoText(unoNet.code, 'Código copiado'));
+$('copy-link').addEventListener('click', () => {
+  const url = new URL(location.href);
+  url.search = ''; url.hash = '';
+  url.searchParams.set('join', unoNet.code);
+  url.searchParams.set('mode', 'online');
+  copyUnoText(url.toString(), 'Enlace copiado: envíalo a tus amigos');
+});
+
+/* ---------- Lobby ---------- */
+function renderUnoLobby(list, bots) {
+  const ul = $('lobby-list');
+  if (!ul) return;
+  ul.innerHTML = '';
+  list.forEach((name, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = '<span class="emo"></span><span class="nm"></span>';
+    li.querySelector('.emo').textContent = (name[0] || '?').toUpperCase();
+    li.querySelector('.emo').style.setProperty('--h', SEAT_HUES[i % SEAT_HUES.length]);
+    li.querySelector('.nm').textContent = name;
+    if (i === 0) {
+      const t = document.createElement('span');
+      t.className = 'tag';
+      t.textContent = 'anfitrión';
+      li.appendChild(t);
     }
+    ul.appendChild(li);
   });
-
-  $('uno-connect-btn').addEventListener('click', () => {
-    const code = $('uno-remote-code').value.trim().toUpperCase();
-    if (code.length !== 5) { unoNetStatus('El código debe tener 5 caracteres.'); return; }
-    if (!unoPeer || unoPeer.destroyed) { unoNetStatus('Error: peer no inicializado.'); return; }
-    unoConn = unoPeer.connect(UNO_ID_PREFIX + code, { reliable: true });
-    unoIsHost = false;
-    unoMyIdx  = 1;
-    unoNetStatus('Conectando con tu rival… (puede tardar unos segundos)');
-    watchConnection(unoConn, () => unoNetStatus(connectionHelp()));
-    unoSetupConn();
-  });
+  if (bots > 0) {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="emo bot">B</span><span class="nm">${bots} bot${bots > 1 ? 's' : ''}</span>`;
+    ul.appendChild(li);
+  }
+  const info = document.createElement('div');
+  info.className = 'lobby-total';
+  info.textContent = `${list.length + bots} de ${MAX_UNO_SEATS} jugadores`;
+  ul.appendChild(info);
 }
 
-function unoNetStatus(msg) {
-  const el = $('uno-net-status');
-  if (el) el.textContent = msg;
-  toast(msg, { kind: 'warn' });
+function refreshUnoLobby() {
+  const list = unoNet.members.map((m) => m.name);
+  renderUnoLobby(list, unoNet.botsN);
+  unoNet.members.forEach((m) => {
+    if (m.conn && m.conn.open) m.conn.send({ t: 'lobby', list, bots: unoNet.botsN });
+  });
+  const total = unoNet.members.length + unoNet.botsN;
+  $('bot-n').textContent = unoNet.botsN;
+  $('bots-minus').disabled = unoNet.botsN <= 0;
+  $('bots-plus').disabled = total >= MAX_UNO_SEATS;
+  $('host-start').disabled = total < 2;
+  $('host-start').textContent = `Abrir la sala (${total} ${total === 1 ? 'jugador' : 'jugadores'})`;
 }
 
-async function initUnoNetwork() {
+/* ---------- Anfitrión ---------- */
+async function openUnoRoom() {
   if (typeof Peer === 'undefined') {
-    unoNetStatus('PeerJS no disponible. Verifica tu conexión y recarga.');
+    unoNetStatus('No se pudo cargar la conexión online. Revisa tu internet y recarga.');
     return;
   }
-  if (unoPeerCreating) return;
-  unoPeerCreating = true;
-  buildOnlinePanel();
-  if ($('uno-net-panel')) $('uno-net-panel').classList.remove('hidden');
-  if ($('uno-minibar')) $('uno-minibar').classList.add('hidden');
+  unoNetStatus('Creando sala…', true);
+  unoNet.role = 'host';
+  unoNet.members = [{ name: myName(), local: true }];
+  unoNet.botsN = 0;
+  unoNet.started = false;
+  unoNet.code = unoRandomCode();
 
-  const code = unoRandomCode();
   const cfg = await getIceConfig();
-  unoPeer = new Peer(UNO_ID_PREFIX + code, { config: cfg });
-  unoPeerCreating = false;
+  unoNet.peer = new Peer(UNO_ID_PREFIX + unoNet.code, { config: cfg });
 
-  unoPeer.on('open', () => {
-    if ($('uno-my-code')) $('uno-my-code').value = code;
-    const warn = $('uno-net-warning');
-    if (warn && !iceHasTurn()) { warn.textContent = TURN_WARNING; warn.classList.remove('hidden'); }
+  unoNet.peer.on('open', () => {
+    $('online-choose').classList.add('hidden');
+    $('lobby').classList.remove('hidden');
+    $('room-code').textContent = unoNet.code;
+    $('host-opts').classList.remove('hidden');
+    $('guest-wait').classList.add('hidden');
+    $('leave-lobby').textContent = 'Cerrar sala';
+    unoNetStatus(iceHasTurn() ? '' : TURN_WARNING);
+    refreshUnoLobby();
     if (window.parent !== window) {
-      window.parent.postMessage({ type: 'UNO_MY_CODE', code }, '*');
+      window.parent.postMessage({ type: 'UNO_MY_CODE', code: unoNet.code }, '*');
     }
-    unoNetStatus('Esperando rival…');
   });
 
-  unoPeer.on('connection', (c) => {
-    if (unoConn && unoConn.open) { c.close(); return; }
-    unoConn   = c;
-    unoIsHost = true;
-    unoMyIdx  = 0;
-    watchConnection(c, () => unoNetStatus(connectionHelp()));
-    unoSetupConn();
-  });
-
-  unoPeer.on('error', (err) => {
+  unoNet.peer.on('connection', onUnoGuestConnection);
+  unoNet.peer.on('error', (err) => {
     if (err.type === 'unavailable-id') {
-      unoPeer.destroy();
-      initUnoNetwork();
-    } else if (err.type === 'peer-unavailable') {
-      unoNetStatus('No se encontró ese código. Revísalo.');
+      unoNet.peer.destroy();
+      unoNet.peer = null;
+      openUnoRoom();
     } else {
-      unoNetStatus('Error de red: ' + err.type);
+      unoNetStatus('Error de conexión: ' + err.type);
     }
   });
 }
 
-function unoSetupConn() {
-  unoStartedOnConn = false;
-  unoConn.on('open', () => {
-    unoNetStatus(unoIsHost ? 'Rival conectado. Iniciando partida…' : 'Conectado. Esperando que el anfitrión inicie…');
-    unoConn.send({ type: 'handshake', name: config.name });
-
-    // Minimizar automáticamente el modal para que no estorbe en pantalla
-    setTimeout(() => {
-      const p = $('uno-net-panel');
-      const mb = $('uno-minibar');
-      if (p) p.classList.add('hidden');
-      if (mb) {
-        mb.classList.remove('hidden');
-        $('uno-minibar-text').textContent = `Online vs ${unoRivalName}`;
+function onUnoGuestConnection(c) {
+  watchConnection(c, () => unoNetStatus(connectionHelp()));
+  c.on('data', (d) => {
+    if (!d || typeof d !== 'object') return;
+    if (d.t === 'hello') {
+      if (unoNet.members.some((m) => m.conn === c)) return;
+      if (unoNet.started) {
+        c.send({ t: 'reject', reason: 'La partida ya está en juego. Espera a que termine.' });
+        setTimeout(() => c.close(), 400);
+        return;
       }
-    }, 1200);
-
-  });
-
-  unoConn.on('data', (data) => {
-    if (!data || typeof data !== 'object') return;
-    switch (data.type) {
-      case 'handshake':
-        unoRivalName = String(data.name || 'Rival').slice(0, 12);
-        unoNetStatus(`Conectado con ${unoRivalName}`);
-        if ($('uno-minibar-text')) $('uno-minibar-text').textContent = `Online vs ${unoRivalName}`;
-        // El anfitrión reparte UNA sola vez por conexión, cuando ya conoce el nombre del invitado
-        if (unoIsHost && !unoStartedOnConn) {
-          unoStartedOnConn = true;
-          setTimeout(() => unoNetworkStartGame(), 500);
-        }
-        break;
-      case 'uno_sync_start':
-        unoNetReceiveStart(data);
-        break;
-      case 'uno_action':
-        unoReceiveNetAction(data);
-        break;
-      case 'restart':
-        if (data.initData && !unoIsHost) {
-          unoNetReceiveStart(data.initData);
-        }
-        break;
+      if (unoNet.members.length >= MAX_UNO_SEATS) {
+        c.send({ t: 'reject', reason: `La sala está llena (${MAX_UNO_SEATS} jugadores máx).` });
+        setTimeout(() => c.close(), 400);
+        return;
+      }
+      unoNet.members.push({ name: cleanName(d.name), conn: c });
+      unoNet.botsN = Math.min(unoNet.botsN, MAX_UNO_SEATS - unoNet.members.length);
+      c.send({ t: 'welcome' });
+      refreshUnoLobby();
+      return;
+    }
+    if (d.t === 'uno_action') {
+      const idx = unoNet.members.findIndex((m) => m.conn === c);
+      if (idx >= 0) {
+        unoReceiveNetAction({ ...d, sender: idx });
+        // Reenviar a los demás invitados
+        unoNet.members.forEach((m) => {
+          if (!m.local && m.conn && m.conn !== c && m.conn.open) {
+            m.conn.send({ ...d, sender: idx });
+          }
+        });
+      }
     }
   });
 
-  unoConn.on('close', () => {
-    unoNetStatus(`${unoRivalName} se desconectó.`);
-    toast(`${unoRivalName} se desconectó`, { kind: 'warn', big: true });
+  const gone = () => unoMemberLeft(c);
+  c.on('close', gone);
+  c.on('error', gone);
+}
+
+function unoMemberLeft(c) {
+  const g = unoNet.members.findIndex((m) => m.conn === c);
+  if (g >= 0) {
+    const leftName = unoNet.members[g].name;
+    if (unoNet.started) {
+      toast(`${leftName} se desconectó`, { kind: 'warn' });
+      logAction(`${leftName} se desconectó.`);
+      const globalIdx = g;
+      const N = players.length;
+      const localIdx = mod(globalIdx - unoNet.myGlobalIdx, N);
+      if (players[localIdx]) {
+        players[localIdx].isBot = true;
+        players[localIdx].name += ' (bot)';
+        updateSeat(localIdx);
+        if (activePlayerIdx === localIdx && !busy && !gameFinished) {
+          startTurn();
+        }
+      }
+      return;
+    }
+    unoNet.members.splice(g, 1);
+    refreshUnoLobby();
+  }
+}
+
+$('host-btn').addEventListener('click', openUnoRoom);
+$('bots-minus').addEventListener('click', () => {
+  if (unoNet.botsN > 0) { unoNet.botsN--; refreshUnoLobby(); }
+});
+$('bots-plus').addEventListener('click', () => {
+  if (unoNet.members.length + unoNet.botsN < MAX_UNO_SEATS) { unoNet.botsN++; refreshUnoLobby(); }
+});
+$('host-start').addEventListener('click', unoBeginOnlineTable);
+
+/* ---------- Invitado ---------- */
+async function joinUnoRoom() {
+  const code = $('join-code').value.trim().toUpperCase();
+  if (code.length !== 5) { unoNetStatus('El código debe tener 5 caracteres.'); return; }
+  if (typeof Peer === 'undefined') { unoNetStatus('No se pudo cargar la conexión online. Revisa tu internet.'); return; }
+  unoNetStatus('Conectando a la sala…', true);
+  unoNet.role = 'guest';
+
+  const cfg = await getIceConfig();
+  unoNet.peer = new Peer(undefined, { config: cfg });
+
+  unoNet.peer.on('open', () => {
+    const c = unoNet.peer.connect(UNO_ID_PREFIX + code, { reliable: true });
+    unoNet.conn = c;
+    watchConnection(c, () => { unoNetStatus(connectionHelp()); resetUnoNet(); });
+    c.on('open', () => c.send({ t: 'hello', name: myName() }));
+    c.on('data', onUnoHostMessage);
+    c.on('close', onUnoHostGone);
+    c.on('error', onUnoHostGone);
+  });
+
+  unoNet.peer.on('error', (err) => {
+    unoNetStatus(err.type === 'peer-unavailable' ? 'No se encontró esa sala. Revisa el código.' : 'Error de conexión: ' + err.type);
+    if (!unoNet.conn || !unoNet.conn.open) resetUnoNet();
   });
 }
 
-/* ---- Inicio sincronizado de partida ---- */
-function unoNetworkStartGame() {
-  if (!unoConn || !unoConn.open) {
-    unoNetStatus('No hay conexión con el rival.');
-    return;
+$('join-btn').addEventListener('click', joinUnoRoom);
+$('join-code').addEventListener('keydown', (e) => { if (e.key === 'Enter') joinUnoRoom(); });
+
+function onUnoHostMessage(d) {
+  if (!d || typeof d !== 'object') return;
+  switch (d.t) {
+    case 'welcome':
+      $('online-choose').classList.add('hidden');
+      $('lobby').classList.remove('hidden');
+      $('room-code').textContent = $('join-code').value.trim().toUpperCase();
+      $('host-opts').classList.add('hidden');
+      $('guest-wait').classList.remove('hidden');
+      $('leave-lobby').textContent = 'Salir de la sala';
+      unoNetStatus('');
+      break;
+    case 'lobby':
+      renderUnoLobby(d.list, d.bots);
+      break;
+    case 'start':
+      unoStartGameWithConfig(d);
+      break;
+    case 'uno_action':
+      unoReceiveNetAction(d);
+      break;
+    case 'reject':
+      unoNetStatus(d.reason || 'No se pudo entrar a la sala.');
+      resetUnoNet();
+      break;
   }
+}
+
+function onUnoHostGone() {
+  if (unoNet.role !== 'guest') return;
+  const inGame = !$('game-app').classList.contains('hidden');
+  resetUnoNet();
+  showUnoSetup();
+  setUnoTab('online');
+  unoNetStatus(inGame ? 'El anfitrión cerró la sala o perdió la conexión.' : 'Se perdió la conexión con la sala.');
+}
+
+/* ---------- Salir / Reiniciar Red ---------- */
+function resetUnoNet() {
+  try { if (unoNet.conn) unoNet.conn.close(); } catch (e) { /* nada */ }
+  try { if (unoNet.peer) unoNet.peer.destroy(); } catch (e) { /* nada */ }
+  unoNet.conn = null;
+  unoNet.peer = null;
+  unoNet.members = [];
+  unoNet.botsN = 0;
+  unoNet.started = false;
+  unoNet.role = 'solo';
+  unoNet.code = '';
+  unoOnlineMode = false;
+  $('lobby').classList.add('hidden');
+  $('online-choose').classList.remove('hidden');
+}
+
+function leaveUnoGame(askConfirm = true) {
+  if (askConfirm) {
+    const msg = unoNet.role === 'host' ? '¿Cerrar la sala? La partida terminará para todos.' : '¿Salir de la partida?';
+    if (!confirm(msg)) return;
+  }
+  gameToken++;
+  resetUnoTrack();
+  resetUnoNet();
+  showUnoSetup();
+  setUnoTab('bots');
+  unoNetStatus('');
+}
+
+$('leave-lobby').addEventListener('click', () => { resetUnoNet(); unoNetStatus(''); });
+const leaveGameBtn = $('leave-game-btn');
+if (leaveGameBtn) leaveGameBtn.addEventListener('click', () => leaveUnoGame(true));
+window.addEventListener('beforeunload', () => { try { if (unoNet.peer) unoNet.peer.destroy(); } catch (e) { /* nada */ } });
+
+/* ---------- Iniciar partida online sincronizada (Host) ---------- */
+function unoBeginOnlineTable() {
+  const humans = unoNet.members;
+  const botsN = unoNet.botsN;
+  const total = humans.length + botsN;
+  if (total < 2 || total > MAX_UNO_SEATS) return;
+
+  const seats = [];
+  humans.forEach((h, i) => {
+    seats.push({ name: h.name, isBot: false, local: !!h.local, conn: h.conn || null });
+  });
+  for (let b = 0; b < botsN; b++) {
+    seats.push({ name: BOT_NAMES[b % BOT_NAMES.length] + ' (bot)', isBot: true });
+  }
+
+  // Generar carta inicial: siempre un número
   let firstCard;
   do { firstCard = generateRandomCard(); } while (firstCard.type !== 'number');
 
-  const hostHand = Array.from({ length: 7 }, generateRandomCard);
-  const guestHand = Array.from({ length: 7 }, generateRandomCard);
+  // Generar 7 cartas para cada asiento
+  const hands = seats.map(() => Array.from({ length: 7 }, generateRandomCard));
+  const pubMembers = seats.map((s) => ({ name: s.name, isBot: s.isBot }));
 
-  const initData = {
-    type: 'uno_sync_start',
+  seats.forEach((s, idx) => {
+    if (s.conn && s.conn.open) {
+      s.conn.send({
+        t: 'start',
+        you: idx,
+        members: pubMembers,
+        firstCard,
+        hands,
+      });
+    }
+  });
+
+  unoNet.started = true;
+  unoStartGameWithConfig({
+    members: pubMembers,
     firstCard,
-    hostHand,
-    guestHand,
-    hostName: config.name || 'Jugador 1',
-    guestName: unoRivalName || 'Rival'
-  };
-
-  unoConn.send(initData);
-  unoStartOnlineGame(initData, true);
+    hands,
+    you: 0,
+  });
 }
 
-function unoNetReceiveStart(data) {
-  unoStartOnlineGame(data, false);
-}
-
-/**
- * Arranca la partida de 2 jugadores en modo online:
- * - players[0] = Jugador local (mano abajo, isBot: false)
- * - players[1] = Rival remoto (arriba, isBot: false)
- * No se llama a botPlay() para el rival remoto.
- */
-function unoStartOnlineGame(data, isHost) {
+/* ---------- Arranque de partida para cada cliente ---------- */
+function unoStartGameWithConfig(data) {
   unoOnlineMode = true;
-  unoIsHost = isHost;
-  unoMyIdx  = isHost ? 0 : 1;
-
-  // Asegurar que el modal de código se oculte y muestre el minibar
-  const panel = $('uno-net-panel');
-  if (panel) panel.classList.add('hidden');
-  const miniBar = $('uno-minibar');
-  if (miniBar) {
-    miniBar.classList.remove('hidden');
-    $('uno-minibar-text').textContent = `Online vs ${unoRivalName}`;
-  }
+  unoNet.myGlobalIdx = data.you;
+  const N = data.members.length;
 
   const token = ++gameToken;
   resetUnoTrack(); unoHold = false; dealing = false;
-  busy = true;
-  gameFinished = false;
-  humanDrew = false;
-  direction = 1;
-  currentStack = 0;
+  busy = true; gameFinished = false; humanDrew = false;
+  direction = 1; currentStack = 0;
   discardCard = data.firstCard;
   activeColor = data.firstCard.color;
 
@@ -1397,18 +1560,24 @@ function unoStartOnlineGame(data, isHost) {
   $('toast-layer').innerHTML = '';
   $('stack-counter').classList.add('hidden');
 
-  const myName    = isHost ? (data.hostName || config.name) : (data.guestName || config.name);
-  const otherName = isHost ? (data.guestName || unoRivalName) : (data.hostName || unoRivalName);
-  config.name = myName;
-  config.count = 2;
+  // Construir array de players donde el jugador local está en players[0],
+  // y los demás rotan en orden horario
+  players = [];
+  for (let l = 0; l < N; l++) {
+    const g = mod(l + data.you, N);
+    const m = data.members[g];
+    players.push({
+      name: m.name,
+      isBot: m.isBot,
+      hand: data.hands[g],
+      emoji: (m.name.trim()[0] || '?').toUpperCase(),
+      hue: SEAT_HUES[g % SEAT_HUES.length],
+      globalIdx: g,
+    });
+  }
 
-  const myHand    = isHost ? data.hostHand : data.guestHand;
-  const otherHand = isHost ? data.guestHand : data.hostHand;
-
-  players = [
-    { name: myName,    isBot: false, hand: myHand,    emoji: myName[0].toUpperCase(),    hue: 210 },
-    { name: otherName, isBot: false, hand: otherHand, emoji: otherName[0].toUpperCase(), hue: 340 }
-  ];
+  config.name = players[0].name;
+  config.count = N;
 
   $('setup-screen').classList.add('hidden');
   $('game-app').classList.remove('hidden');
@@ -1417,111 +1586,114 @@ function unoStartOnlineGame(data, isHost) {
   showOnPile(data.firstCard, 0, false);
   renderAll();
 
-  // El Host juega primero:
-  // En pantalla del Host: activePlayerIdx = 0 (su turno)
-  // En pantalla del Invitado: activePlayerIdx = 1 (espera jugada del Host)
-  activePlayerIdx = isHost ? 0 : 1;
+  // El anfitrión (asiento global 0) juega primero
+  activePlayerIdx = mod(0 - data.you, N);
   updateTurnHighlights();
 
-  if (isHost) {
+  if (activePlayerIdx === 0) {
     busy = false;
     renderAll();
     toast('¡Tu turno! Juega una carta o roba.', { kind: 'info', big: true });
-    logAction(`Partida Online vs ${otherName}. Tu turno.`);
+    logAction('Partida iniciada. Es tu turno.');
   } else {
     busy = true;
     renderAll();
-    toast(`Turno de ${otherName}`, { kind: 'info' });
-    logAction(`Partida Online vs ${otherName}. Turno de ${otherName}.`);
+    toast(`Turno de ${players[activePlayerIdx].name}`, { kind: 'info' });
+    logAction(`Partida iniciada. Turno de ${players[activePlayerIdx].name}.`);
   }
 }
 
-/* ---- Enviar y recibir acciones de juego ---- */
+/* ---------- Transmisión de acciones online ---------- */
 function unoSendAction(action) {
-  if (!unoOnlineMode || !unoConn || !unoConn.open) return;
-  unoConn.send({ type: 'uno_action', ...action });
+  if (!unoOnlineMode) return;
+  if (unoNet.role === 'host') {
+    unoNet.members.forEach((m) => {
+      if (!m.local && m.conn && m.conn.open) {
+        m.conn.send({ t: 'uno_action', sender: 0, action });
+      }
+    });
+  } else if (unoNet.role === 'guest') {
+    if (unoNet.conn && unoNet.conn.open) {
+      unoNet.conn.send({ t: 'uno_action', sender: unoNet.myGlobalIdx, action });
+    }
+  }
 }
 
+function unoBroadcastAction(action, senderGlobalIdx) {
+  if (!unoOnlineMode || unoNet.role !== 'host') return;
+  unoNet.members.forEach((m) => {
+    if (!m.local && m.conn && m.conn.open) {
+      m.conn.send({ t: 'uno_action', sender: senderGlobalIdx, action });
+    }
+  });
+}
+
+/* ---------- Aplicación de acciones recibidas ---------- */
 async function unoReceiveNetAction(data) {
   if (!unoOnlineMode) return;
-  switch (data.action) {
+  const act = data.action || data;
+  const senderGlobal = (data.sender !== undefined) ? data.sender : (act.sender !== undefined ? act.sender : 1);
+  const N = players.length;
+  const localIdx = mod(senderGlobal - unoNet.myGlobalIdx, N);
+  if (localIdx === 0) return; // ya ejecutado localmente
+
+  const p = players[localIdx];
+  if (!p) return;
+
+  switch (act.action) {
     case 'play':
-      await _netApplyPlay(data);
+      await _netApplyPlay(localIdx, act.card);
       break;
     case 'draw':
-      await giveCards(1, data.count || 1);
-      if (data.penalty) {
-        currentStack = 0;
-        updateCenter();
-        activePlayerIdx = 0;
-        busy = false;
-        renderAll();
-        toast('¡Tu turno!', { kind: 'info' });
-      }
+      await giveCards(localIdx, act.count || 1);
       break;
     case 'penalty':
       currentStack = 0;
       updateCenter();
-      await giveCards(1, data.count || 1);
-      // El rival aceptó el castigo y pierde su turno: le toca al jugador local
-      activePlayerIdx = 0;
-      busy = false;
-      renderAll();
-      toast('¡Tu turno!', { kind: 'info' });
+      await giveCards(localIdx, act.count || 1);
+      advanceTurn(null);
       break;
     case 'pass':
       advanceTurn(null);
       break;
-    case 'uno_say':                       // el rival pulsó su botón Un0
-      if (players[1] && players[1].hand.length === 1) {
-        players[1].unoSaid = true;
-        sfx.uno();
-        toast(`¡${players[1].name} dijo Un0!`, { big: true });
-        logAction(`${players[1].name} dijo Un0`);
-        updateSeat(1);
-      }
-      break;
-    case 'uno_penalty': {                 // el rival olvidó decir Un0: roba cartas y pierde el turno
-      const total = data.count || UNO_PENALTY;
-      currentStack = 0;
-      updateCenter();
-      logAction(`${players[1].name} no dijo Un0: roba ${total} cartas y pierde su turno`);
-      toast(`¡${players[1].name} no dijo Un0! Roba ${total}`, { kind: 'warn', big: true });
-      sfx.penalty();
-      await giveCards(1, total);
-      activePlayerIdx = 0;
-      busy = false;
-      renderAll();
-      toast('¡Tu turno!', { kind: 'info' });
-      break;
-    }
     case 'choose_color':
-      activeColor = data.color;
+      activeColor = act.color;
       updateCenter();
       toast(`Color: ${COLOR_ES[activeColor]}`, { kind: activeColor });
       break;
-    case 'swap':
-      if (players.length >= 2) {
-        const tmp = players[0].hand;
-        players[0].hand = players[1].hand;
-        players[1].hand = tmp;
-        renderHand();
-        updateSeat(0);
-        updateSeat(1);
-        toast('¡Intercambio de cartas!', { big: true });
-      }
+    case 'uno_say':
+      p.unoSaid = true;
+      sfx.uno();
+      toast(`¡${p.name} dijo Un0!`, { big: true });
+      logAction(`${p.name} dijo Un0`);
+      updateSeat(localIdx);
       break;
+    case 'uno_penalty': {
+      const total = act.count || UNO_PENALTY;
+      currentStack = 0;
+      updateCenter();
+      logAction(`${p.name} no dijo Un0: roba ${total} cartas y pierde su turno`);
+      toast(`¡${p.name} no dijo Un0! Roba ${total}`, { kind: 'warn', big: true });
+      sfx.penalty();
+      await giveCards(localIdx, total);
+      advanceTurn(null);
+      break;
+    }
+    case 'swap_all':
+      await swapAllHands();
+      break;
+    case 'swap_target': {
+      const targetLocal = mod(act.target - unoNet.myGlobalIdx, N);
+      await swapTwoHands(localIdx, targetLocal);
+      break;
+    }
   }
 }
 
-/* Aplica la jugada del rival (jugador 1 en la pantalla local) */
-async function _netApplyPlay(data) {
-  const rivalIdx = 1;
-  const p = players[rivalIdx];
-  if (!p) return;
-
-  const card = data.card;
-  if (!card) return;
+/* Aplica la carta jugada por un jugador remoto o bot */
+async function _netApplyPlay(idx, card) {
+  const p = players[idx];
+  if (!p || !card) return;
 
   let ci = p.hand.findIndex(c => c.id === card.id);
   if (ci === -1) {
@@ -1530,232 +1702,45 @@ async function _netApplyPlay(data) {
   } else {
     p.hand[ci] = card;
   }
-  await playCard(rivalIdx, ci);
+  await playCard(idx, ci);
 }
 
-function unoNetworkRestart(data) {
-  if (data && data.unoConfig) {
-    unoNetReceiveStart(data.unoConfig);
-  }
-}
-
-/* ---- Nota sobre sincronización de acciones ----
-   La sincronización de red se realiza llamando a unoSendAction() directamente
-   desde los event listeners de clicks del jugador local (draw-deck, pass-btn)
-   y desde onHandClick. No se sobreescriben las funciones internas (incompatible
-   con 'use strict' y el scope local del módulo).
-   ------------------------------------------- */
-
-/* ---- CSS del panel online y minibar (se inyecta dinámicamente) ---- */
-(function injectOnlineStyles() {
-  const style = document.createElement('style');
-  style.textContent = `
-    .uno-net-panel {
-      position: fixed;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      z-index: 10000;
-      background: linear-gradient(135deg, #1a1a3e, #0d1b2a);
-      border: 2px solid #7b61ff;
-      border-radius: 16px;
-      padding: 0;
-      box-shadow: 0 8px 40px rgba(0,0,0,0.7);
-      font-family: 'Fredoka', 'Segoe UI', sans-serif;
-      min-width: 310px;
-      max-width: 400px;
-      width: 90vw;
-    }
-    .uno-net-panel.hidden { display: none !important; }
-    .uno-net-inner { padding: 24px; display: flex; flex-direction: column; gap: 14px; }
-    .uno-net-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding-bottom: 8px;
-      border-bottom: 1px solid rgba(123,97,255,0.3);
-    }
-    .uno-net-header .uno-net-title { color: #f1c40f; font-size: 1.25rem; font-weight: bold; }
-    .uno-net-header-actions { display: flex; gap: 8px; }
-    .uno-icon-btn {
-      background: #232348;
-      color: #fff;
-      border: 1px solid #7b61ff;
-      border-radius: 6px;
-      width: 28px;
-      height: 28px;
-      cursor: pointer;
-      font-weight: bold;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      transition: background 0.2s;
-    }
-    .uno-icon-btn:hover { background: #7b61ff; }
-    .net-row { display: flex; flex-direction: column; gap: 4px; }
-    .net-row label { font-size: 0.85rem; color: #aaa; font-weight: 600; }
-    .net-code-wrap { display: flex; gap: 8px; }
-    .net-code-wrap input { flex: 1; }
-    #uno-my-code, #uno-remote-code {
-      background: #0d1b2a;
-      color: #fff;
-      border: 1px solid #7b61ff;
-      border-radius: 8px;
-      padding: 10px 14px;
-      font-size: 1.1rem;
-      letter-spacing: 3px;
-      font-weight: bold;
-      text-transform: uppercase;
-      font-family: 'Fredoka', monospace;
-    }
-    #uno-copy-btn {
-      background: #7b61ff;
-      color: #fff;
-      border: none;
-      border-radius: 8px;
-      padding: 10px 14px;
-      cursor: pointer;
-      font-size: 0.95rem;
-      font-weight: 600;
-      transition: background 0.2s;
-    }
-    #uno-copy-btn:hover { background: #9b81ff; }
-    #uno-connect-btn {
-      background: linear-gradient(90deg, #e94560, #ff6b35);
-      color: #fff;
-      border: none;
-      border-radius: 10px;
-      padding: 12px;
-      font-size: 1.05rem;
-      font-weight: 700;
-      cursor: pointer;
-      transition: opacity 0.2s, transform 0.1s;
-      font-family: 'Fredoka', sans-serif;
-    }
-    #uno-connect-btn:hover { opacity: 0.88; }
-    #uno-connect-btn:active { transform: scale(0.97); }
-    .net-status {
-      text-align: center;
-      font-size: 0.9rem;
-      color: #7b61ff;
-      padding: 4px 0 0;
-      min-height: 20px;
-    }
-    .uno-minibar {
-      position: fixed;
-      top: 12px;
-      right: 12px;
-      z-index: 10000;
-      background: rgba(13, 27, 42, 0.95);
-      border: 1.5px solid #7b61ff;
-      border-radius: 30px;
-      padding: 6px 14px;
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      color: #fff;
-      font-size: 0.85rem;
-      box-shadow: 0 4px 20px rgba(0,0,0,0.5);
-      backdrop-filter: blur(4px);
-    }
-    .uno-minibar.hidden { display: none !important; }
-    .uno-minibar-btn {
-      background: #7b61ff;
-      color: #fff;
-      border: none;
-      border-radius: 12px;
-      padding: 3px 10px;
-      font-size: 0.8rem;
-      font-weight: 600;
-      cursor: pointer;
-      transition: background 0.2s;
-    }
-    .uno-minibar-btn:hover { background: #9b81ff; }
-    .net-warning {
-      font-size: 0.78rem; line-height: 1.3; color: #f5c542;
-      background: rgba(245,197,66,0.1); border: 1px solid rgba(245,197,66,0.4);
-      border-radius: 8px; padding: 6px 8px;
-    }
-    .net-warning.hidden { display: none; }
-  `;
-  document.head.appendChild(style);
-})();
-
-/* ---- Integración con la página padre (index.html) via postMessage ---- */
+/* ---------- Integración con index.html (iframe bridge) ---------- */
 (function setupPostMessageBridge() {
-  // Avisar al padre que estamos listos
   window.addEventListener('load', () => {
     if (window.parent !== window) {
-      window.parent.postMessage({ type: 'UNO_READY' }, '*');
+      try { window.parent.postMessage({ type: 'UNO_READY' }, '*'); } catch (e) { /* nada */ }
     }
   });
 
-  // Recibir mensajes del padre
   window.addEventListener('message', (e) => {
     if (!e.data || typeof e.data !== 'object') return;
     const { type } = e.data;
 
     if (type === 'UNO_CONFIG') {
-      // Aplicar configuración enviada desde index.html
-      const { name, count, difficulty, mode } = e.data;
-      config.name       = name || config.name;
-      config.count      = count || config.count;
-      config.difficulty = difficulty || config.difficulty;
-
-      // Sincroniza el selector de modo del iframe con el del index (antes "Iniciar" arrancaba contra bots aunque eligieras online)
-      const modeSel = $('uno-game-mode');
-      if (modeSel) {
-        modeSel.value = (mode === 'online') ? 'online' : 'bots';
-        modeSel.dispatchEvent(new Event('change'));
+      const { name, mode, count, difficulty } = e.data;
+      if (name && $('your-name')) $('your-name').value = cleanName(name);
+      if (count && $('player-count')) $('player-count').value = count;
+      if (difficulty && $('bot-difficulty')) $('bot-difficulty').value = difficulty;
+      if (unoNet.role === 'solo' && !unoNet.started) {
+        setUnoTab(mode === 'online' ? 'online' : 'bots');
       }
-
-      // Si el modo es online, inicializar la red
-      if (mode === 'online') {
-        if (!unoPeer || unoPeer.destroyed) {
-          initUnoNetwork();
-        }
-      } else {
-        // Ocultar panel online si existe
-        const panel = $('uno-net-panel');
-        if (panel) panel.classList.add('hidden');
-        unoOnlineMode = false;
-      }
-
-      // Actualizar los campos del setup-screen con los valores del padre
-      const nameEl  = $('your-name');
-      const countEl = $('player-count');
-      const diffEl  = $('bot-difficulty');
-      if (nameEl  && name)       nameEl.value  = name;
-      if (countEl && count)      countEl.value = count;
-      if (diffEl  && difficulty) diffEl.value  = difficulty;
     }
 
-    if (type === 'UNO_START') {
-      // El padre pulsó "Iniciar Juego"
-      const wantsOnline = ($('uno-game-mode') || {}).value === 'online';
-      if (wantsOnline) {
-        if (!unoPeer || unoPeer.destroyed) {
-          initUnoNetwork();
-        } else if ($('uno-net-panel')) {
-          $('uno-net-panel').classList.remove('hidden');
-          if ($('uno-minibar')) $('uno-minibar').classList.add('hidden');
-        }
-        if (unoIsHost && unoConn && unoConn.open) {
-          if (!unoOnlineMode) unoNetworkStartGame();
-        } else if (!(unoConn && unoConn.open)) {
-          unoNetStatus('Comparte tu código o conéctate con el de tu rival.');
-        }
-      } else {
-        // Lanzar partida normal
+    if (type === 'UNO_START' && !unoNet.started) {
+      if (!$('pane-bots').classList.contains('hidden')) {
         $('start-btn') && $('start-btn').click();
-      }
-    }
-
-    if (type === 'UNO_PEER_CODE') {
-      // El padre nos pasa su código peer (para mostrarlo si queremos)
-      if ($('uno-my-code') && e.data.code) {
-        $('uno-my-code').value = e.data.code;
+      } else if (unoNet.role === 'solo') {
+        $('host-btn') && $('host-btn').click();
       }
     }
   });
 }());
+
+/* ---------- Parámetros de URL iniciales (?join=XXXXX&mode=online) ---------- */
+(function initFromUrl() {
+  const q = new URLSearchParams(location.search);
+  if (q.get('name') && $('your-name')) $('your-name').value = cleanName(q.get('name'));
+  if (q.get('join') && $('join-code')) $('join-code').value = q.get('join').toUpperCase().slice(0, 5);
+  setUnoTab(q.get('mode') === 'online' || q.get('join') ? 'online' : 'bots');
+})();
